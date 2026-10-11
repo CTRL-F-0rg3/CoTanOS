@@ -160,11 +160,9 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
 
     unsafe {
         let _ = crate::cpu::scheduler::tick(0, 1_000_000);
-        PICS.lock()
-            .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
-    }
-        
-    unsafe {
+        // One EOI for one timer tick. A second non-specific EOI here would
+        // acknowledge the next-highest in-service interrupt — which is the
+        // keyboard (IRQ1) whenever a key is down — and swallow it.
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
     }

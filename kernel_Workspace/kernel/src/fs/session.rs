@@ -237,6 +237,12 @@ pub fn init_input() {
     // likes, so the input path is put back the way it was after every one.
     crate::terminal::restore_input();
 
+    // Drain both keyboard paths. The default backend is PS/2-only, and the old
+    // resolution menu — the thing that let a user press `u`/`b` to switch — is
+    // gone, so a machine whose only keyboard is USB would otherwise be left
+    // typing into a dead PS/2 port. `Both` still drains PS/2 first.
+    set_input_backend(InputBackend::Both);
+
     let usb = crate::drivers::usb::class::hid::keyboard_attached();
     if usb {
         say("input: USB keyboard (PS/2 still active)\n");
@@ -245,6 +251,10 @@ pub fn init_input() {
         // that never had a USB keyboard plugged in is not broken.
         say("input: PS/2 keyboard (no USB keyboard found)\n");
     }
+
+    // One snapshot of the whole input path, so "the keyboard does not work" is
+    // diagnosable from the boot log rather than guessed at.
+    crate::serial::write_str(&alloc::format!("{}\n", crate::terminal::input_debug()));
 }
 
 /// A keystroke, from whichever keyboard produced it.
@@ -388,7 +398,7 @@ pub fn try_key() -> Option<Key> {
 ///
 /// # Why `next_key` could not report anything
 ///
-/// [`next_key`] halts until a key arrives, so it has no point at which it can
+/// [`next_key`] spins until a key arrives, so it has no point at which it can
 /// answer "is anything wrong?". A menu that calls only that is a black box: if
 /// the input path is broken the machine simply stops, and every trace placed
 /// after the call is unreachable. Splitting the drain out means a caller can
@@ -399,10 +409,12 @@ pub fn next_key() -> Option<Key> {
         if let Some(k) = try_key() {
             return Some(k);
         }
-        // Nothing typed yet. Halting is right here: this is a console, and
-        // spinning would keep the boot CPU busy instead of letting the power
-        // scheduler see an idle machine.
-        x86_64::instructions::hlt();
+        // Busy-poll instead of halting. A USB keyboard has no PS/2 IRQ to wake
+        // the CPU — its key reports are read by polling the xHCI event ring via
+        // `try_key`, not by an interrupt — so `hlt` here would stall the poll on
+        // whatever interrupt happens to wake the CPU. Spinning keeps the USB
+        // path live regardless of the timer's state.
+        core::hint::spin_loop();
     }
 }
 

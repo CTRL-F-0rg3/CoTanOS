@@ -260,14 +260,13 @@ pub fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
                 }
             }
 
-            // Pre-login display menu, the way Redox's boot chooser works: pick
-            // the mode first, so the login prompt below is drawn once at the
-            // size it will keep rather than being re-laid-out afterwards.
+            // Pre-login display mode: set the resolution first, so the login
+            // prompt below is drawn once at the size it will keep rather than
+            // being re-laid-out afterwards. The mode itself is chosen
+            // automatically by `bootmenu::run` (1920x1080); no menu is shown.
             //
-            // Input is switched to keycode mode first, because the menu needs the
-            // arrow keys and the driver's default character mode has no case for
-            // them. Escape passes, so an unattended machine is not left sitting
-            // on a menu forever.
+            // Input is switched to keycode mode first, because the login prompt
+            // and shell read keycodes (`session::read_line`), not characters.
             println!("[boot-dbg] step: fs::bootmenu::run() — display mode...");
             fs::session::init_input();
             let (mw, mh) = fs::bootmenu::run();
