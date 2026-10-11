@@ -41,23 +41,73 @@ fn kbuf_pop() -> Option<u8> {
     Some(c)
 }
 
+/// How many keycodes are waiting, without consuming any.
+///
+/// `pop_keycode` is destructive, and a menu that wants to report "the queue is
+/// empty, so nothing is arriving" cannot ask by popping - popping would make the
+/// symptom disappear and the next question unanswerable.
+pub fn keycode_pending() -> usize {
+    KCODE_TAIL
+        .load(Ordering::Acquire)
+        .wrapping_sub(KCODE_HEAD.load(Ordering::Acquire))
+        % KCODE_SIZE
+}
+
+/// The raw keycode at the head of the queue, without consuming it.
+///
+/// Paired with [`keycode_pending`]: a non-empty queue that keeps the same value
+/// means the menu is not draining it, which is a different fault from an empty
+/// queue, and the two need opposite fixes.
+pub fn keycode_peek() -> Option<u32> {
+    if keycode_pending() == 0 {
+        return None;
+    }
+    let head = KCODE_HEAD.load(Ordering::Acquire);
+    Some(KCODEBUF[head].load(Ordering::Acquire))
+}
+
+/// The head of the character queue, without consuming it.
+pub fn char_pending() -> usize {
+    KTAIL
+        .load(Ordering::Acquire)
+        .wrapping_sub(KHEAD.load(Ordering::Acquire))
+        % KBUF_SIZE
+}
+
 /// Re-assert the PS/2 input path.
+///
 ///
 /// # Why this has to exist
 ///
 /// Setting a display mode goes through the BIOS video path, and a BIOS is free
-/// to leave the 8042 controller however it likes when it does — commonly with
+/// to leave the 8042 controller however it likes when it does - commonly with
 /// the keyboard interface disabled or scanning turned off at the device. Nothing
-/// downstream can recover from that on its own: the interrupt line stays silent,
-/// the handler never runs, and the keyboard looks dead while the driver still
-/// reports one attached.
+/// downstream can recover from that on its own: the interrupt line stays
+/// silent, the handler never runs, and the keyboard looks dead while the driver
+/// still reports one attached.
 ///
 /// The three things that have to hold are therefore stated explicitly:
 ///
-/// 1. the controller's keyboard interface is enabled (0xAE),
+/// 1. the controller's first PS/2 port is enabled (0xAE),
 /// 2. the device is told to resume scanning (0xF4),
 /// 3. whatever the mode change left in the output buffer is discarded, so a
 ///    half-finished transaction is not decoded as a keystroke.
+///
+/// # Why no command-byte write
+///
+/// Reading and rewriting the controller command byte (0x20 / 0x60) looks like
+/// the thorough thing to do, and it was tried: on QEMU 11.1 the controller
+/// never answers 0x20, so the write fell through onto the keyboard's data port
+/// and came back as scancode 0x01 - Escape - which made the resolution menu
+/// close on a key nobody pressed. Two bounded spins of 100 000 port reads per
+/// call bought no working state and one very confusing bug.
+///
+/// 0xAE is the documented way to clear the disable bit, and it is what this
+/// function does. The acknowledgement is deliberately *not* waited for: the
+/// keyboard IRQ handler already drains the output buffer, so by the time this
+/// function polled for the 0xFA it was gone, and the wait timed out every time.
+/// The status register is reported instead, which is observable without racing
+/// the handler.
 ///
 /// Every wait is bounded. An input path that can spin forever on a wedged
 /// controller would hang the machine where it used merely to be quiet.
@@ -66,43 +116,136 @@ pub fn restore_input() {
 
     const DATA: u16 = 0x60;
     const STATUS: u16 = 0x64;
-    /// The device acknowledging a command.
-    const ACK: u8 = 0xFA;
-    /// Resume scanning.
+    /// Enable the first PS/2 port. This is the bit a display mode set leaves
+    /// set, and a disabled interface produces no scancode at all.
+    const ENABLE_FIRST_PORT: u8 = 0xAE;
+    /// Resume scanning at the device.
     const ENABLE_SCANNING: u8 = 0xF4;
     /// Status bit 0: an unread byte is waiting.
     const OBF: u8 = 0x01;
-    /// A generous upper bound on any single wait, in spins.
+    /// Status bit 4: keyboard lock state. The sense of this bit is not
+    /// portable - the PC/AT controller documents it as "keyboard lock, 1 =
+    /// locked", while QEMU's 8042 model calls the same bit "unlocked". It is
+    /// therefore reported as the raw bit and not labelled, because a label
+    /// would be a claim about hardware this code has not been run on.
+    const LOCK_BIT: u8 = 0x10;
+    /// A generous upper bound on the drain.
     const SPINS: usize = 100_000;
 
     let mut data = Port::<u8>::new(DATA);
     let mut status = Port::<u8>::new(STATUS);
 
     unsafe {
-        // 1. Controller-side: enable the keyboard interface.
-        status.write(0xAE);
-
-        // 3. Discard anything already buffered. Done before the device command
-        // so a stale byte is not mistaken for the acknowledgement below.
-        let mut spins = 0;
-        while status.read() & OBF != 0 && spins < SPINS {
+        // 1. Discard whatever the mode change left behind, BEFORE anything
+        //    else, so a stale byte is not mistaken for anything that follows.
+        let mut dropped = 0u32;
+        for _ in 0..SPINS {
+            if status.read() & OBF == 0 {
+                break;
+            }
             let _ = data.read();
-            spins += 1;
+            dropped += 1;
         }
 
-        // 2. Device-side: resume scanning, and consume its acknowledgement.
+        // 2. Controller-side: enable the interface. A controller command
+        //    produces no reply, so there is nothing to wait for.
+        status.write(ENABLE_FIRST_PORT);
+
+        // 3. Device-side: resume scanning. The acknowledgement is consumed by
+        //    the keyboard IRQ, not here.
         data.write(ENABLE_SCANNING);
 
-        spins = 0;
-        while spins < SPINS {
-            if status.read() & OBF != 0 {
-                if data.read() == ACK {
-                    break;
-                }
-            }
-            spins += 1;
-        }
+        let status_now = status.read();
+        crate::serial::write_str(&alloc::format!(
+            "[k8042] przywrocono (status={status_now:#04x} lockbit={} odrzucone={dropped})\n",
+            u8::from(status_now & LOCK_BIT != 0),
+        ));
     }
+}
+
+/// A snapshot of every stage between the keyboard and the queue, as one line.
+///
+/// # Why this exists
+///
+/// "The menu does not react" has at least five quite different causes, and they
+/// look identical from the outside because the symptom is silence:
+///
+/// 1. no scancode is ever produced (nothing is plugged in, or the device is not
+///    scanning),
+/// 2. a scancode is sitting in the 8042 output buffer but the interrupt never
+///    fires, because the PIC line is masked,
+/// 3. the interrupt fires but the handler never runs,
+/// 4. the handler runs and pushes, but the queue is not the one being drained,
+/// 5. the queue has the key and the consumer is looking somewhere else.
+///
+/// Printing only when a key arrives can only ever report case 5, because in the
+/// other four the function never comes back. So this reports the state of the
+/// whole path instead, and each field separates the cases: `obf=1` with
+/// `irq1=0` is case 2, `irq1` climbing with an empty queue is case 3, and a
+/// non-zero pending count with no progress is case 4.
+///
+/// Ports are read directly rather than through the driver, which is the whole
+/// point: the driver is one of the stages being checked.
+pub fn input_debug() -> alloc::string::String {
+    use core::fmt::Write;
+
+    const PS2_STATUS: u16 = 0x64;
+    /// Status bit 0: a byte is waiting to be read.
+    const OBF: u8 = 0x01;
+    /// Status bit 4: keyboard lock state. Reported as the raw bit and not
+    /// labelled, because the sense is not portable — the PC/AT controller
+    /// documents it as "keyboard lock, 1 = locked" while QEMU's 8042 model calls
+    /// the same bit "unlocked". A label here would be a claim about hardware
+    /// this code has not been run on, and an inverted one is worse than none.
+    const LOCK_BIT: u8 = 0x10;
+
+    // The 8042 status port: is there an unread byte right now?
+    let status = unsafe { x86_64::instructions::port::Port::<u8>::new(PS2_STATUS).read() };
+    let obf = status & OBF != 0;
+    // Not labelled on purpose — see `LOCK_BIT`. The earlier `kbd=locked` was
+    // asserted from the PC/AT reading and is the opposite of what QEMU's model
+    // calls the same bit, which is how a wrong conclusion gets written down as
+    // if it were a measurement.
+    let kbd_bit = u8::from(status & LOCK_BIT != 0);
+
+    // The master PIC mask: is the keyboard line allowed through at all?
+    let mask = unsafe { crate::interrupts::PICS.lock().read_masks()[0] };
+    let line = if mask & 0x02 == 0 { "open" } else { "MASKED" };
+
+    let pending = KCODE_TAIL
+        .load(Ordering::Acquire)
+        .wrapping_sub(KCODE_HEAD.load(Ordering::Acquire))
+        % KCODE_SIZE;
+
+    let mut s = alloc::string::String::new();
+    let _ = write!(
+        s,
+        "[input] ps2status={:#04x} obf={} kbdbits={} pic_mask={:#04x} irq1={} {} \
+         capture={} keyq={}/{} chars_q={}",
+        status,
+        u8::from(obf),
+        kbd_bit,
+        mask,
+        crate::interrupts::KEYBOARD_HITS.load(Ordering::Relaxed),
+        line,
+        CAPTURE_KEYCODE.load(Ordering::Relaxed),
+        pending,
+        KCODE_SIZE,
+        KTAIL.load(Ordering::Acquire).wrapping_sub(KHEAD.load(Ordering::Acquire)) % KBUF_SIZE,
+    );
+
+    // The USB side of the same question. `keysq` alone cannot tell "no keyboard
+    // on the bus" from "keyboard present, nothing typed yet", and those need
+    // opposite fixes. `attached` is the attach decision the HID driver made; the
+    // queue depth is whether a character has come out of it.
+    let _ = write!(
+        s,
+        " usb_attached={} usb_chars={}",
+        u8::from(crate::drivers::usb::class::hid::keyboard_attached()),
+        crate::drivers::usb::class::hid::keyboard::queued(),
+    );
+
+    s
 }
 
 /// Take the next pending keystroke, if any.
@@ -214,8 +357,11 @@ fn scancode_to_keycode(code: u8) -> Option<u32> {
         0x01 => Some(0x102), 
         0x4D => Some(0x103), 
         0x4B => Some(0x104), 
-        0x50 => Some(0x105),
-        0x48 => Some(0x106), 
+        // Set 1 make-codes: 0x48 is the down arrow, 0x50 the up arrow. These two
+        // were the wrong way round, so the resolution menu's arrows moved the
+        // selection opposite to how the key is labelled.
+        0x48 => Some(0x105),
+        0x50 => Some(0x106), 
         0x47 => Some(0x107), 
         0x4F => Some(0x108), 
         0x53 => Some(0x109), 

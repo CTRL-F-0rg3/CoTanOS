@@ -237,6 +237,12 @@ pub fn init_input() {
     // likes, so the input path is put back the way it was after every one.
     crate::terminal::restore_input();
 
+    // Drain both keyboard paths. The default backend is PS/2-only, and the old
+    // resolution menu — the thing that let a user press `u`/`b` to switch — is
+    // gone, so a machine whose only keyboard is USB would otherwise be left
+    // typing into a dead PS/2 port. `Both` still drains PS/2 first.
+    set_input_backend(InputBackend::Both);
+
     let usb = crate::drivers::usb::class::hid::keyboard_attached();
     if usb {
         say("input: USB keyboard (PS/2 still active)\n");
@@ -245,6 +251,10 @@ pub fn init_input() {
         // that never had a USB keyboard plugged in is not broken.
         say("input: PS/2 keyboard (no USB keyboard found)\n");
     }
+
+    // One snapshot of the whole input path, so "the keyboard does not work" is
+    // diagnosable from the boot log rather than guessed at.
+    crate::serial::write_str(&alloc::format!("{}\n", crate::terminal::input_debug()));
 }
 
 /// A keystroke, from whichever keyboard produced it.
@@ -281,25 +291,130 @@ pub enum Key {
 /// `usb::poll()` has to be called *before* draining, not after: the characters
 /// only exist once the transfer has been serviced, and a driver that is only
 /// polled on the way past would report an empty keyboard forever.
-pub fn next_key() -> Option<Key> {
-    loop {
-        // Service USB first so a completed transfer can deposit a character
-        // during this same pass. `poll` walks the event ring and is cheap when
-        // there is nothing pending, so this is safe to call in a tight loop.
+/// One non-blocking pass at the keyboards.
+///
+/// # Why `next_key` could not report anything
+///
+/// [`next_key`] halts until a key arrives, so it has no point at which it can
+/// answer "is anything wrong?". A menu that calls only that is a black box: if
+/// the input path is broken the machine simply stops, and every trace placed
+/// after the call is unreachable. Splitting the drain out means a caller can
+/// poll, decide for itself that nothing is coming, and say so — which is the
+/// difference between a menu that is quiet and a menu that cannot see.
+///
+/// The USB poll has to come first here rather than in the caller: the character
+/// only exists once the transfer has been serviced, so a caller that drained
+/// first and polled after would report an empty keyboard forever.
+/// Which keyboard the system listens to.
+///
+/// # Why PS/2 is the default
+///
+/// The 8042 is not the faster path in the abstract — it is the *available* one.
+/// USB input costs a completed control transfer and an interrupt-endpoint event
+/// before a character exists at all, while a PS/2 key is in the output buffer by
+/// the time the handler runs. On a laptop the PS/2 port is also the one that is
+/// actually populated, so preferring it is not a guess: it is the keyboard that
+/// is there.
+///
+/// That is the whole of the preference. A USB keyboard is *not* convertible to
+/// PS/2 in software — it is not electrically present on the 8042 port at all —
+/// so "prefer PS/2" cannot mean "treat USB as PS/2". It means start there, and
+/// fall through to USB rather than going deaf. See [`try_key`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InputBackend {
+    Ps2,
+    Usb,
+    Both,
+}
+
+static BACKEND: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+
+fn backend() -> InputBackend {
+    match BACKEND.load(core::sync::atomic::Ordering::Relaxed) {
+        1 => InputBackend::Usb,
+        2 => InputBackend::Both,
+        _ => InputBackend::Ps2,
+    }
+}
+
+/// Switch the active input backend. Returns the previous one.
+pub fn set_input_backend(b: InputBackend) -> InputBackend {
+    let old = backend();
+    BACKEND.store(
+        match b {
+            InputBackend::Ps2 => 0,
+            InputBackend::Usb => 1,
+            InputBackend::Both => 2,
+        },
+        core::sync::atomic::Ordering::Relaxed,
+    );
+    old
+}
+
+/// The active backend, as a name for a status line.
+pub fn input_backend_name() -> &'static str {
+    match backend() {
+        InputBackend::Ps2 => "ps/2",
+        InputBackend::Usb => "usb",
+        InputBackend::Both => "both",
+    }
+}
+
+/// One non-blocking pass at the keyboards.
+///
+/// # Why PS/2 preference does not exclude USB
+///
+/// [`InputBackend::Ps2`] drains PS/2 first, but then still checks USB, and that
+/// is deliberate rather than a loose reading of the mode. Nothing on the 8042
+/// port means a USB keyboard produces no PS/2 scancode *ever*, so a strict
+/// PS/2-only drain would leave a desktop with a USB keyboard completely
+/// unresponsive — the exact silence this layer was written to make visible.
+///
+/// The ordering still buys what was asked for: on a machine with a real PS/2
+/// keyboard, PS/2 is drained first on every pass and its keystrokes win, with
+/// no USB transfer on the path. Only a PS/2 port that stays silent pays for the
+/// USB check.
+pub fn try_key() -> Option<Key> {
+    let b = backend();
+
+    if b != InputBackend::Usb {
+        if let Some(code) = crate::terminal::pop_keycode() {
+            return Some(key_from_code(code));
+        }
+    }
+
+    if b != InputBackend::Ps2 {
         crate::drivers::usb::poll();
 
         if let Some(c) = crate::drivers::usb::class::hid::keyboard::take_char() {
             return Some(key_from_char(c));
         }
+    }
 
-        if let Some(code) = crate::terminal::pop_keycode() {
-            return Some(key_from_code(code));
+    None
+}
+
+/// Block until a keystroke is available on any keyboard.
+///
+/// # Why `next_key` could not report anything
+///
+/// [`next_key`] spins until a key arrives, so it has no point at which it can
+/// answer "is anything wrong?". A menu that calls only that is a black box: if
+/// the input path is broken the machine simply stops, and every trace placed
+/// after the call is unreachable. Splitting the drain out means a caller can
+/// poll, decide for itself that nothing is coming, and say so — which is the
+/// difference between a menu that is quiet and a menu that cannot see.
+pub fn next_key() -> Option<Key> {
+    loop {
+        if let Some(k) = try_key() {
+            return Some(k);
         }
-
-        // Nothing typed yet. Halting is right here: this is a console, and
-        // spinning would keep the boot CPU busy instead of letting the power
-        // scheduler see an idle machine.
-        x86_64::instructions::hlt();
+        // Busy-poll instead of halting. A USB keyboard has no PS/2 IRQ to wake
+        // the CPU — its key reports are read by polling the xHCI event ring via
+        // `try_key`, not by an interrupt — so `hlt` here would stall the poll on
+        // whatever interrupt happens to wake the CPU. Spinning keeps the USB
+        // path live regardless of the timer's state.
+        core::hint::spin_loop();
     }
 }
 
