@@ -26,6 +26,12 @@ tgs-userspace = { path = "../../userspace" }
 # which is exactly the drift this dependency removes.
 kapi-abi = { path = "../../driverspace_workspace/lib/kapi-abi" }
 
+# The network driver framework: FreeBSD-ported mechanisms (if_media word,
+# if_flags/ifnet control state, refcounted receive filters, TX-hang watchdog,
+# NAPI budgeted polling, ring ownership) surfaced to the kernel NIC layer via
+# `crate::nic::netfw`.
+ds-fw-net = { path = "../../driverspace_workspace/lib/ds-fw-net" }
+
 # Zależności z core (jeśli kernel z nich korzysta):
 kstd_core = { path = "../core/kstd_core" }
 kstd_base = { path = "../core/kstd_base" }

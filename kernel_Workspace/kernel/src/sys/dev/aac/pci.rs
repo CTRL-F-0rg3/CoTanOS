@@ -51,6 +51,20 @@ impl PciDev {
         crate::pci::config_read_u16(addr, offset)
     }
 
+    pub fn write_config_u16(&self, offset: u8, value: u16) {
+        let addr = crate::pci::PciAddress {
+            bus: self.bus,
+            device: self.dev,
+            function: self.func,
+        };
+        let base = offset & 0xFC;
+        let shift = ((offset & 2) as u32) * 8;
+        let mut current = crate::pci::config_read_u32(addr, base);
+        current &= !(0xFFFFu32 << shift);
+        current |= (value as u32) << shift;
+        crate::pci::config_write_u32(addr, base, current);
+    }
+
     fn write_config_u32(&self, offset: u8, value: u32) {
         let addr = crate::pci::PciAddress {
             bus: self.bus,
@@ -62,11 +76,11 @@ impl PciDev {
 
     pub fn enable_busmaster(&self) -> Result<(), PciError> {
         let cmd = self.read_config_u16(0x04);
-        if cmd & 0x04 == 0 {
-            self.write_config_u16(0x04, cmd | 0x04);
+        if cmd & 0x04u16 == 0 {
+            self.write_config_u16(0x04, cmd | 0x04u16);
         }
         let cmd = self.read_config_u16(0x04);
-        if cmd & 0x04 == 0 {
+        if cmd & 0x04u16 == 0 {
             return Err(PciError::BusMasterFailed);
         }
         Ok(())

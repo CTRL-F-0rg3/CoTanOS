@@ -1,0 +1,10 @@
+[package]
+name = "ds-fw-net"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# The framework speaks the kernel ABI's error vocabulary at its boundary - the
+# same convention `ds-fw-block` and `ds-fw-gpu` use - while the device layer
+# keeps its richer `NetworkError` internally. `lib.rs` defines the conversion.
+kapi-abi = { path = "../kapi-abi" }

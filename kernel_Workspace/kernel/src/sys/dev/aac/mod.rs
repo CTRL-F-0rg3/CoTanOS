@@ -410,10 +410,8 @@ impl AacController {
         self.run_sync(io, idx)?;
 
         let info = unsafe {
-            let src = self.pool.ptr(idx) as *mut u8
-                .wrapping_add(HEADER_BYTES)
-                .cast::<AdapterInfo>();
-            ptr::read_unaligned(src)
+            let base = (self.pool.ptr(idx) as *mut u8).wrapping_add(HEADER_BYTES);
+            ptr::read_unaligned(base.cast::<AdapterInfo>())
         };
 
         log!(
@@ -450,7 +448,7 @@ impl AacController {
         let idx = self.take_sync()?;
 
         unsafe {
-            let payload = self.pool.ptr(idx) as *mut u8
+            let payload = (self.pool.ptr(idx) as *mut u8)
                 .wrapping_add(HEADER_BYTES) as *mut BlockRead;
 
             ptr::write(payload, BlockRead {

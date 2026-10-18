@@ -15,6 +15,12 @@ const KIND_EMPTY: u8 = 0;
 const KIND_FILE: u8 = 1;
 const KIND_DIR: u8 = 2;
 
+// Superblock layout. The header bytes (everything before `SB_HASH_OFF`) are
+// hashed and the hash is stored at `SB_HASH_OFF`, mirroring RedoxFS's
+// `Header::create_hash` — the hash field itself is excluded from the hash.
+const SB_GENERATION_OFF: usize = 32;
+const SB_HASH_OFF: usize = 40;
+
 #[derive(Debug)]
 pub enum FsError {
     NoDevice,
@@ -34,6 +40,12 @@ pub struct Superblock {
     pub total_blocks: u32,
     pub free_start: u32,
     pub file_count: u32,
+    /// Generation counter, bumped on every superblock write.
+    ///
+    /// Ported from RedoxFS's `Header::generation`: it lets a reader tell a
+    /// stale superblock copy from the live one after a torn write. Incremented
+    /// by [`write_superblock`], carried back by [`read_superblock`].
+    pub generation: u64,
 }
 
 fn rd32(b: &[u8], off: usize) -> u32 {
@@ -43,6 +55,39 @@ fn rd32(b: &[u8], off: usize) -> u32 {
 fn wr32(b: &mut [u8], off: usize, v: u32) {
     let bytes = v.to_le_bytes();
     b[off..off + 4].copy_from_slice(&bytes);
+}
+
+fn rd64(b: &[u8], off: usize) -> u64 {
+    u64::from_le_bytes([
+        b[off],
+        b[off + 1],
+        b[off + 2],
+        b[off + 3],
+        b[off + 4],
+        b[off + 5],
+        b[off + 6],
+        b[off + 7],
+    ])
+}
+
+fn wr64(b: &mut [u8], off: usize, v: u64) {
+    let bytes = v.to_le_bytes();
+    b[off..off + 8].copy_from_slice(&bytes);
+}
+
+/// FNV-1a 64-bit over the superblock header bytes.
+///
+/// RedoxFS seals its `Header` with `seahash`; this is the same job — detecting
+/// a torn or corrupted superblock — with no external dependency. It is not
+/// cryptographic, and it does not need to be: the point is to refuse to mount
+/// on a header that does not match what was written, not to resist an attacker.
+fn hash_superblock(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
 }
 
 pub fn format(dev: &dyn BlockDevice) -> Result<()> {
@@ -55,6 +100,11 @@ pub fn format(dev: &dyn BlockDevice) -> Result<()> {
     wr32(&mut sb, 20, DATA_START);
     wr32(&mut sb, 24, DATA_START);
     wr32(&mut sb, 28, 0);
+    // Seal the header like RedoxFS's `Header::update`: generation zero, then a
+    // hash over everything before the hash field.
+    wr64(&mut sb, SB_GENERATION_OFF, 0);
+    let header_hash = hash_superblock(&sb[..SB_HASH_OFF]);
+    wr64(&mut sb, SB_HASH_OFF, header_hash);
 
     dev.write_block(1, &sb).map_err(|_| FsError::Io)?;
 
@@ -75,10 +125,20 @@ pub fn read_superblock(dev: &dyn BlockDevice) -> Result<Superblock> {
         return Err(FsError::Corrupt);
     }
 
+    // RedoxFS `Header::valid` pattern: recompute the hash over the header bytes
+    // and compare. A mismatch means the block was torn or corrupted, and the
+    // filesystem must not mount on top of it.
+    let stored = rd64(&sb, SB_HASH_OFF);
+    let actual = hash_superblock(&sb[..SB_HASH_OFF]);
+    if stored != actual {
+        return Err(FsError::Corrupt);
+    }
+
     Ok(Superblock {
         total_blocks: rd32(&sb, 12),
         free_start: rd32(&sb, 24),
         file_count: rd32(&sb, 28),
+        generation: rd64(&sb, SB_GENERATION_OFF),
     })
 }
 
@@ -92,6 +152,11 @@ pub fn write_superblock(dev: &dyn BlockDevice, sb: &Superblock) -> Result<()> {
     wr32(&mut buf, 20, DATA_START);
     wr32(&mut buf, 24, sb.free_start);
     wr32(&mut buf, 28, sb.file_count);
+    // RedoxFS `Header::update` pattern: bump the generation, then seal the
+    // header with a hash over everything before the hash field.
+    wr64(&mut buf, SB_GENERATION_OFF, sb.generation.wrapping_add(1));
+    let header_hash = hash_superblock(&buf[..SB_HASH_OFF]);
+    wr64(&mut buf, SB_HASH_OFF, header_hash);
     dev.write_block(1, &buf).map_err(|_| FsError::Io)
 }
 
