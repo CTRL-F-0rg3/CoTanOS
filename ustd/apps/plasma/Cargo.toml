@@ -1,0 +1,16 @@
+[package]
+name = "tgs-plasma"
+description = "An animated integer-only plasma rendered to the ring-3 framebuffer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "tgs-plasma"
+path = "src/main.rs"
+
+[dependencies]
+tgs-rt = { workspace = true }
+tgs-gfx = { workspace = true }
+tgs-hal = { workspace = true }

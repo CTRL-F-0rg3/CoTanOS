@@ -3,8 +3,24 @@
 version = 4
 
 [[package]]
+name = "tgs-clock"
+version = "0.1.0"
+dependencies = [
+ "tgs-gfx",
+ "tgs-hal",
+ "tgs-rt",
+]
+
+[[package]]
 name = "tgs-elf"
 version = "0.1.0"
+
+[[package]]
+name = "tgs-gfx"
+version = "0.1.0"
+dependencies = [
+ "tgs-hal",
+]
 
 [[package]]
 name = "tgs-hal"
@@ -22,6 +38,32 @@ name = "tgs-libc"
 version = "0.1.0"
 dependencies = [
  "tgs-hal",
+]
+
+[[package]]
+name = "tgs-paint"
+version = "0.1.0"
+dependencies = [
+ "tgs-gfx",
+ "tgs-hal",
+ "tgs-rt",
+]
+
+[[package]]
+name = "tgs-pattern"
+version = "0.1.0"
+dependencies = [
+ "tgs-gfx",
+ "tgs-rt",
+]
+
+[[package]]
+name = "tgs-plasma"
+version = "0.1.0"
+dependencies = [
+ "tgs-gfx",
+ "tgs-hal",
+ "tgs-rt",
 ]
 
 [[package]]

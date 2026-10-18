@@ -42,6 +42,15 @@ mod tgcomm;
 #[cfg(target_arch = "x86_64")]
 mod allde;
 
+#[cfg(target_arch = "x86_64")]
+mod i3dw;
+
+#[cfg(target_arch = "x86_64")]
+mod trampoline_rings;
+
+#[cfg(target_arch = "x86_64")]
+mod userspace;
+
 mod caps;
 mod policy;
 mod serial;
@@ -278,6 +287,22 @@ pub fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
             fs::session::init_input();
             let (mw, mh) = fs::bootmenu::run();
             println!("[boot-dbg] display mode: {mw}x{mh}");
+
+            // Real ring-3 userspace, guarded by `/bin/init.elf` presence so a
+            // build without it still boots the in-kernel shell below.
+            let mut probe = [0u8; 64];
+            let has_init = crate::fs::vfs::root()
+                .and_then(|fs| fs.read_path("/bin/init.elf", &mut probe))
+                .is_some();
+            if has_init {
+                println!("[boot-dbg] ring-3 init found, entering userspace");
+                trampoline_rings::init();
+                if let Err(e) = crate::userspace::process::spawn::spawn_init() {
+                    println!("[boot] ring-3 spawn failed: {e}");
+                } else {
+                    trampoline_rings::start();
+                }
+            }
 
             // Enter userspace for real: log in, then run the shell.
             //

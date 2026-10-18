@@ -15,6 +15,9 @@ pub const RING_KERNEL: u8 = 0;
 pub const RING_DRIVER: u8 = 1;
 pub const RING_USER: u8 = 3;
 
+/// Top of the ring-3 user stack (grows down).
+pub const USER_STACK_TOP: u64 = 0x7FFF_0000_0000;
+
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct CpuCtx {
@@ -29,11 +32,13 @@ extern "C" {
     fn tr_init(rsp0: u64);
     pub fn tr_restore_ctx(ctx: *mut CpuCtx) -> !;
     static mut tr_tss_desc: [u64; 2];
+    static mut tr_tss: [u8; 104];
     static mut isr_hypercall: u8;
     static mut isr_default: u8;
 }
 
 #[repr(C, packed)]
+#[derive(Clone, Copy)]
 struct IdtGate {
     low: u16,
     sel: u16,
@@ -114,7 +119,7 @@ pub fn init() {
 
         set_gate(0x80, hyp, 3);
 
-        asm!("lidt {}", in(reg) &IDT_PTR);
+        asm!("lidt [{}]", in(reg) &IDT_PTR);
     }
 }
 
@@ -152,7 +157,7 @@ pub fn add_world(ring: u8, cr3: u64, entry: u64,
 }
 
 fn write_cr3(v: u64) {
-    unsafe { asm!("mov {}, cr3", in(reg) v) };
+    unsafe { asm!("mov cr3, {}", in(reg) v) };
 }
 
 fn pick_next(from: Option<usize>) -> usize {
@@ -183,6 +188,26 @@ pub fn start() -> ! {
     }
 }
 
+/// The page-table root of a world.
+pub fn world_cr3(world: usize) -> u64 {
+    unsafe { WORLDS[world].as_ref().map(|w| w.cr3).unwrap_or(0) }
+}
+
+/// Mark a world dead and switch to the next alive one. Never returns.
+pub fn exit_from(world: usize, _c: &mut CpuCtx, _code: i32) -> ! {
+    unsafe {
+        if let Some(w) = WORLDS[world].as_mut() {
+            w.alive = false;
+        }
+        let next = pick_next(Some(world));
+        CURRENT = Some(next);
+        let w = WORLDS[next].as_mut().expect("no alive world to switch to");
+        write_cr3(w.cr3);
+        tr_restore_ctx(&mut w.ctx);
+    }
+}
+
+#[no_mangle]
 extern "C" fn tr_hyper(ctx: *mut CpuCtx) {
     unsafe {
         let c = &mut *ctx;
@@ -190,7 +215,7 @@ extern "C" fn tr_hyper(ctx: *mut CpuCtx) {
 
         match c.rax {
             HYPER_YIELD => {
-                crate::driverspaceinit::init::service::poll();
+                crate::tgcomm::driverspace::poll();
 
                 TICK += 1;
 
@@ -217,7 +242,13 @@ extern "C" fn tr_hyper(ctx: *mut CpuCtx) {
             }
 
             _ => {
-                c.rax = u64::MAX;
+                // Ring-3 syscalls (0x1000 and up) go to the userspace syscall
+                // table; anything smaller is an unknown hypercall.
+                if c.rax >= 0x1000 {
+                    crate::userspace::process::syscall::handle(cur, c);
+                } else {
+                    c.rax = u64::MAX;
+                }
             }
         }
     }

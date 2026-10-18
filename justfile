@@ -7,7 +7,7 @@
 set shell := ["bash", "-c"]
 
 # Default: build the whole thing (driver libraries -> kernel bootimage).
-build: drivers ds-libs gfx-libs vise-libs kernel
+build: drivers ds-libs gfx-libs vise-libs kernel i3dw
     @echo "[just] full build OK"
 
 # Build the exported hardware-driver libraries (no_std, x86_64-unknown-none).
@@ -72,9 +72,19 @@ kernel: drivers
     cd kernel_Workspace/kernel-bin && cargo bootimage
 
 # Run the kernel in QEMU (graphical window, serial on stdout). Also builds the
-# userspace workspace so the whole system compiles together.
-run: kernel uspace-libs
+# userspace workspace and the i3dw desktop so the whole system compiles together.
+run: kernel uspace-libs i3dw
     cd kernel_Workspace/kernel-bin && ./run.sh
+
+# Build the i3dw desktop environment (host-side renderer + tests).
+i3dw:
+    cargo test --manifest-path i3dw/Cargo.toml
+
+# Build the ring-3 init (/bin/init.elf) plus the graphical apps against the real
+# Rust std. Copy the results into the TFS data image so `just run` can boot them.
+ring3:
+    bash ./ustd/build.sh
+    @echo "[just] ring-3 binaries built (copy tgs-init -> /bin/init.elf, the tgs-* apps -> /bin/<name>.elf)"
 
 # Build the userspace workspace (nested system + graphical-window demo).
 uspace-libs:

@@ -33,6 +33,11 @@ members = [
     "rt",
     "init",
     "hal",
+    "gfx",
+    "apps/pattern",
+    "apps/plasma",
+    "apps/clock",
+    "apps/paint",
     "compat/elf",
 ]
 # Added as they are written: "compat/loader", "compat/vdso".
@@ -47,6 +52,7 @@ publish = false
 tgs-hal = { path = "hal" }
 tgs-libc = { path = "libc" }
 tgs-rt = { path = "rt" }
+tgs-gfx = { path = "gfx" }
 
 # Only the host test profile ever builds these; the sysroot build is driven by
 # `build.sh`, which passes `--features sysroot`.

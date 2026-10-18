@@ -65,6 +65,34 @@ fn user_cstr(cr3: u64, ptr: u64, buf: &mut [u8]) -> Option<&str> {
     None
 }
 
+/// Copy kernel bytes into the given user address space (across page walks).
+fn user_copy_out(cr3: u64, dst: u64, src: &[u8]) -> bool {
+    let mut pos = 0usize;
+
+    while pos < src.len() {
+        let va = dst + pos as u64;
+        let page = va & !0xFFFu64;
+        let off = (va & 0xFFF) as usize;
+
+        let phys = unsafe { paging_translate_in(cr3, page) };
+
+        if phys == u64::MAX {
+            return false;
+        }
+
+        let n = (4096 - off).min(src.len() - pos);
+
+        unsafe {
+            let p = (DIRECT_BASE + phys + off as u64) as *mut u8;
+            core::ptr::copy_nonoverlapping(src.as_ptr().add(pos), p, n);
+        }
+
+        pos += n;
+    }
+
+    true
+}
+
 static mut ELF_BUF: [u8; 64 * 1024] = [0; 64 * 1024];
 
 fn do_spawn(cr3: u64, path_ptr: u64, parent_pid: u32) -> i64 {
@@ -131,10 +159,7 @@ pub fn handle(world: usize, c: &mut tr::CpuCtx) {
     let a2 = c.rdx;
 
     c.rax = match num {
-        SYS_EXIT => {
-            tr::exit_from(world, c, a0 as i32);
-            return;
-        }
+        SYS_EXIT => tr::exit_from(world, c, a0 as i32),
 
         SYS_SPAWN => do_spawn(cr3, a0, me) as u64,
 
@@ -176,7 +201,7 @@ pub fn handle(world: usize, c: &mut tr::CpuCtx) {
             match crate::fs::vfs::root().and_then(|fs| fs.list_path("/")) {
                 Some(v) if idx < v.len() => {
                     let e = &v[idx];
-                    let bytes = e.name.as_bytes();
+                    let bytes = &e.name[..];
                     let n = bytes.len().min(cap);
 
                     if !user_copy_out(cr3, a1, &bytes[..n]) {
@@ -185,7 +210,7 @@ pub fn handle(world: usize, c: &mut tr::CpuCtx) {
 
                     let _ = user_copy_out(cr3, a1 + n as u64, &[0u8]);
 
-                    r.arg1 = e.size;
+                    c.rsi = e.size;
 
                     if e.is_dir { 2 } else { 1 }
                 }
@@ -193,20 +218,16 @@ pub fn handle(world: usize, c: &mut tr::CpuCtx) {
             }
         }
 
-        SYS_RUNCL => {
-            let mut tmp = [0u8; 128];
-
-            match user_cstr(cr3, a0, &mut tmp) {
-                Some(path) => super::runcl::run(path) as u64,
-                None => u64::MAX,
-            }
-        }
+        // The triang-lang VM (`runcl`) is a host-side crate and is not linked
+        // into the kernel, so this syscall is reported as unsupported rather
+        // than left to fail at link time.
+        SYS_RUNCL => u64::MAX,
 
         SYS_UI_OPEN => {
             extern "C" {
                 fn hdmi_caps_raw(w: *mut u32, h: *mut u32,
                                  s: *mut u32, phys: *mut u64);
-                fn kvirt_to_phys(p: *const u8) -> u64;
+                fn kvirt_to_phys(ptr: *mut core::ffi::c_void) -> u64;
                 fn paging_map_page_in(pml4: u64, virt: u64,
                                       phys: u64, flags: u64) -> bool;
             }
@@ -236,14 +257,15 @@ pub fn handle(world: usize, c: &mut tr::CpuCtx) {
                 }
 
                 /* font: RO + user + NX */
-                let font_phys = kvirt_to_phys(&font8x8);
+                let font_phys =
+                    kvirt_to_phys(&font8x8 as *const u8 as *mut core::ffi::c_void);
 
                 paging_map_page_in(cr3, UI_FONT_VA, font_phys,
                                    0x1 | 0x4 | 0x8);
 
-                r.arg0 = ((w as u64) << 16) | h as u64;
-                r.arg1 = s as u64;
-                r.arg2 = UI_FB_VA;
+                c.rdi = ((w as u64) << 16) | h as u64;
+                c.rsi = s as u64;
+                c.rdx = UI_FB_VA;
 
                 0
             }

@@ -137,10 +137,18 @@ ${FORCE_SYMS[@]}"
 
 # `-Z` flags belong to *cargo* rather than rustc, so they go on the cargo command
 # line and nowhere else. Cargo rejects one after a `--` outright.
+#
+# Every userspace binary the image can carry is built here, in one cargo
+# invocation so the freshly built `std` is shared rather than rebuilt per crate.
+# `tgs-init` is the entry process; the `tgs-*` ones are the graphical apps.
 PKG=(
     --manifest-path "$HERE/Cargo.toml"
     --target "$TARGET_JSON"
     -p tgs-init
+    -p tgs-pattern
+    -p tgs-plasma
+    -p tgs-clock
+    -p tgs-paint
     "${STD_FLAGS[@]}"
     "${PROFILE_ARGS[@]}"
 )
@@ -153,12 +161,16 @@ cargo build "${PKG[@]}"
 
 PROFILE=debug
 [[ "${PROFILE_ARGS[*]:-}" == *release* ]] && PROFILE=release
-OUT="$HERE/target/x86_64-trangorge-uspace/$PROFILE/tgs-init"
+BIN_DIR="$HERE/target/x86_64-trangorge-uspace/$PROFILE"
 
 echo
-echo "built $OUT"
-if command -v file >/dev/null 2>&1; then
-    file "$OUT"
-fi
+echo "built userspace binaries:"
+for bin in tgs-init tgs-pattern tgs-plasma tgs-clock tgs-paint; do
+    echo "  $BIN_DIR/$bin"
+    if command -v file >/dev/null 2>&1; then
+        file "$BIN_DIR/$bin"
+    fi
+done
 echo
-echo "copy it into the image as /bin/init.elf and boot; see ../README.md"
+echo "copy them into the image (/bin/init.elf for the init, the rest as"
+echo "/bin/<name>.elf) and boot; see ../README.md"

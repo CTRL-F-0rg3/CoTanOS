@@ -6,7 +6,8 @@ const USER_STACK_TOP: u64 = 0x7FFF_0000_0000;
 pub fn spawn_init() -> Result<(), &'static str> {
     let mut buf = [0u8; 64 * 1024];
 
-    let n = crate::fs::vfs::read_path("/bin/init.elf", &mut buf)
+    let n = crate::fs::vfs::root()
+        .and_then(|fs| fs.read_path("/bin/init.elf", &mut buf))
         .ok_or("init.elf not found in fs")?;
 
     let loaded = elf::load(&buf[..n])?;
