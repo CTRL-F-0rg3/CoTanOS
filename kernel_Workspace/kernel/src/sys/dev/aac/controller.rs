@@ -172,11 +172,13 @@ impl AacController {
             (*payload).command = 0; // VM_CtBlockRead (handled by firmware)
             (*payload).container_id = container_id;
             (*payload).block_number = lba;
-            (*payload).byte_count = byte_count;
+            (*payload).sector_count = byte_count / 512; // approximate
+            (*payload).stamp = 0;
             
-            // Fill Scatter-Gather table
-            let sg = &mut (*payload).sg_map; // Assuming you add sg_map to BlockRead struct
-            // ... fill SG entries ...
+            // SgTable is placed separately after BlockRead in the FIB data
+            let sg_ptr = (payload as *mut u8).add(core::mem::size_of::<BlockRead>()) as *mut SgTable;
+            (*sg_ptr).count = sg_count;
+            (*sg_ptr).entry = SgEntry { address: sg_phys, byte_count };
         }
 
         // Enqueue to Adapter Normal Command Queue

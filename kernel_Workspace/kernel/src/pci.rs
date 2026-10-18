@@ -116,6 +116,8 @@ pub const RTL8139_DEVICE: u16 = 0x8139;
 pub const VIRTIO_VENDOR: u16 = 0x1AF4;
 pub const VIRTIO_NET_LEGACY_DEVICE: u16 = 0x1000;
 pub const VIRTIO_NET_MODERN_DEVICE: u16 = 0x1041;
+pub const VIRTIO_BLK_LEGACY_DEVICE: u16 = 0x1001;
+pub const VIRTIO_BLK_MODERN_DEVICE: u16 = 0x1042;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NicKind {

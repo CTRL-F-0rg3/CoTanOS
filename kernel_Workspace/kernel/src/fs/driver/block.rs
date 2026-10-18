@@ -16,35 +16,39 @@ pub trait BlockDevice {
     fn read_block(&self, block: u64, buf: &mut [u8]) -> Result<(), DriverError>;
     fn write_block(&self, block: u64, buf: &[u8]) -> Result<(), DriverError>;
 
-    fn read_blocks(&self, start: u64, buf: &mut [u8]) -> Result<(), DriverError> {
+    fn read_blocks(&self, start: u64, count: u64, buf: &mut [u8]) -> Result<(), DriverError> {
         let bs = self.block_size();
 
-        if buf.len() % bs != 0 {
+        let expected = (count as usize)
+            .checked_mul(bs)
+            .ok_or(DriverError::InvalidLength)?;
+
+        if buf.len() < expected {
             return Err(DriverError::InvalidLength);
         }
 
-        let n = buf.len() / bs;
-
-        for i in 0..n {
-            let off = i * bs;
-            self.read_block(start + i as u64, &mut buf[off..off + bs])?;
+        for i in 0..count {
+            let off = i as usize * bs;
+            self.read_block(start + i, &mut buf[off..off + bs])?;
         }
 
         Ok(())
     }
 
-    fn write_blocks(&self, start: u64, buf: &[u8]) -> Result<(), DriverError> {
+    fn write_blocks(&self, start: u64, count: u64, buf: &[u8]) -> Result<(), DriverError> {
         let bs = self.block_size();
 
-        if buf.len() % bs != 0 {
+        let expected = (count as usize)
+            .checked_mul(bs)
+            .ok_or(DriverError::InvalidLength)?;
+
+        if buf.len() < expected {
             return Err(DriverError::InvalidLength);
         }
 
-        let n = buf.len() / bs;
-
-        for i in 0..n {
-            let off = i * bs;
-            self.write_block(start + i as u64, &buf[off..off + bs])?;
+        for i in 0..count {
+            let off = i as usize * bs;
+            self.write_block(start + i, &buf[off..off + bs])?;
         }
 
         Ok(())

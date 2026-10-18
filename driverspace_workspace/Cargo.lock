@@ -85,6 +85,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ds-fw-net"
+version = "0.1.0"
+dependencies = [
+ "kapi-abi",
+]
+
+[[package]]
 name = "ds-fw-power"
 version = "0.1.0"
 dependencies = [

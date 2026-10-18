@@ -107,8 +107,8 @@ pub struct BlockRead {
     pub command: u32,      // Zawsze VM_CtBlockRead (ale tu mamy FibCommand)
     pub container_id: u32, // ID woluminu RAID
     pub block_number: u32, // Numer sektora (LBA)
-    pub byte_count: u32,   // Ile bajtów czytać
-    // Tu wklejamy SgTable
+    pub sector_count: u32, // Liczba sektorów
+    pub stamp: u32,        // Znacznik czasu/sekwencji
 }
 
 /// Komenda zapisu bloku (ContainerCommand)

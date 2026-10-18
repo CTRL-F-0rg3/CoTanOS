@@ -49,15 +49,15 @@ pub struct SgTable {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct QueueEntry {
-    pub fib_size: u32,
-    pub fib_addr: u32, // Physical address of the FIB
+    pub size: u32,
+    pub addr: u32, // Physical address of the FIB
 }
 
 /// The shared memory structure mandated by the Adaptec firmware.
 /// Must be 16-byte aligned.
 #[repr(C)]
 pub struct QueueTable {
-    pub qindex: [[u32; 2]; QUEUE_COUNT],
+    pub q_index: [[u32; 2]; QUEUE_COUNT],
     pub host_norm_cmd: [QueueEntry; HOST_NORM_CMD_ENTRIES],
     pub host_high_cmd: [QueueEntry; HOST_HIGH_CMD_ENTRIES],
     pub adap_norm_cmd: [QueueEntry; ADAP_NORM_CMD_ENTRIES],
@@ -155,15 +155,15 @@ impl QueueManager {
         
         unsafe {
             let entry = &mut *queue_ptr.add(prod_idx);
-            entry.fib_addr = fib_phys;
-            entry.fib_size = fib_size;
+            entry.addr = fib_phys;
+            entry.size = fib_size;
         }
 
         // Update local and shared producer index
-        self.local_producer[queue_id] = (prod_idx + 1) % self.get_queue_size(queue_id);
+        self.local_producer[queue_id] = ((prod_idx + 1) % self.get_queue_size(queue_id) as usize) as u32;
         unsafe {
             let qt = self.qt_virt.as_ptr();
-            (*qt).qindex[queue_id][PRODUCER] = self.local_producer[queue_id];
+            (*qt).q_index[queue_id][PRODUCER] = self.local_producer[queue_id];
         }
     }
 
@@ -171,8 +171,8 @@ impl QueueManager {
     pub fn dequeue(&mut self, queue_id: usize) -> Option<usize> {
         unsafe {
             let qt = self.qt_virt.as_ptr();
-            let shared_cons = (*qt).qindex[queue_id][CONSUMER];
-            let shared_prod = (*qt).qindex[queue_id][PRODUCER];
+            let shared_cons = (*qt).q_index[queue_id][CONSUMER];
+            let shared_prod = (*qt).q_index[queue_id][PRODUCER];
 
             if self.local_consumer[queue_id] == shared_prod {
                 return None; // Queue empty
@@ -184,11 +184,11 @@ impl QueueManager {
             
             // We need to find which FIB index this physical address corresponds to.
             // Since FIBs are sequentially allocated, we can calculate the index.
-            let fib_offset = entry.fib_addr as u64 - self.fib_pool_phys;
+            let fib_offset = entry.addr as u64 - self.fib_pool_phys;
             let fib_index = (fib_offset / core::mem::size_of::<Fib>() as u64) as usize;
 
-            self.local_consumer[queue_id] = (cons_idx + 1) % self.get_queue_size(queue_id);
-            (*qt).qindex[queue_id][CONSUMER] = self.local_consumer[queue_id];
+            self.local_consumer[queue_id] = ((cons_idx + 1) % self.get_queue_size(queue_id) as usize) as u32;
+            (*qt).q_index[queue_id][CONSUMER] = self.local_consumer[queue_id];
 
             Some(fib_index)
         }
