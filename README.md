@@ -8,7 +8,7 @@
 
 ## Overview & Philosophy
 
-TrangorgeOS is built with a strict **from-scratch philosophy** (~35,000+ lines of code, actively expanding). It discards classic microkernel overhead and hybrid kernel bloat in favor of a strictly isolated, policy-enforced driver architecture. 
+TrangorgeOS is built with a strict **from-scratch philosophy** (~). It discards classic microkernel overhead and hybrid kernel bloat in favor of a strictly isolated, policy-enforced driver architecture. 
 
 The project operates under an intensive development cycle aimed at producing a stable, bare-metal kernel fully functional on physical hardware.
 
