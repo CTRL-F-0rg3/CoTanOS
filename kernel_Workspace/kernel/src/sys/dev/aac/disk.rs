@@ -1,9 +1,40 @@
 // disk.rs
 
-use crate::kernel::block::{BlockDevice, IoRequest, IoError};
-use crate::drivers::aac::pci::AacSoftc;
+use crate::sys::dev::aac::pci::AacSoftc;
 
 pub const AAC_BLOCK_SIZE: u32 = 512;
+
+// Minimal block device traits so this module compiles standalone.
+// The kernel's real block layer can re-implement these and glue them in later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IoError {
+    NotSupported,
+    Busy,
+    Io,
+}
+
+pub struct IoRequest {
+    read: bool,
+    write: bool,
+    byte_count_val: usize,
+    residual_val: usize,
+}
+
+impl IoRequest {
+    pub fn new(read: bool, write: bool, byte_count: usize) -> Self {
+        Self { read, write, byte_count_val: byte_count, residual_val: byte_count }
+    }
+    pub fn is_read(&self) -> bool { self.read }
+    pub fn is_write(&self) -> bool { self.write }
+    pub fn byte_count(&self) -> usize { self.byte_count_val }
+    pub fn set_residual(&mut self, residual: usize) { self.residual_val = residual; }
+}
+
+pub trait BlockDevice {
+    fn sector_size(&self) -> u32;
+    fn total_sectors(&self) -> u64;
+    fn strategy(&self, req: &mut IoRequest) -> Result<(), IoError>;
+}
 
 pub struct AacDisk {
     pub controller: *mut AacSoftc,
@@ -58,7 +89,7 @@ impl BlockDevice for AacDisk {
         // W rzeczywistości tutaj musisz zbudować FIB (ContainerCommand),
         // podpiąć Scatter-Gather listę do bufora z req i wrzucić FIB do kolejki.
         // Na ten moment to tylko placeholder pokazujący strukturę.
-        
+
         unsafe {
             let sc = &mut *self.controller;
             // TODO: sc.submit_io(self.container_id, req);

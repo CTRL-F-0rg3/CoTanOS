@@ -1,10 +1,10 @@
 // controller.rs
 
 use core::ptr;
-use crate::drivers::aac::pci::AacSoftc;
-use crate::drivers::aac::queues::{QueueManager, ADAP_NORM_CMD, HOST_NORM_RESP, ADAP_NORM_RESP};
-use crate::drivers::aac::fib::*;
-use crate::drivers::aac::regs::*;
+use crate::sys::dev::aac::pci::AacSoftc;
+use crate::sys::dev::aac::queues::{QueueManager, ADAP_NORM_CMD, HOST_NORM_RESP, ADAP_NORM_RESP};
+use crate::sys::dev::aac::fib::*;
+use crate::sys::dev::aac::regs::*;
 
 pub struct AacController {
     pub softc: AacSoftc,

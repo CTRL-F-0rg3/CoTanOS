@@ -45,6 +45,7 @@ mod allde;
 mod caps;
 mod policy;
 mod serial;
+mod sys;
 mod testing;
 mod vga_buffer;
 

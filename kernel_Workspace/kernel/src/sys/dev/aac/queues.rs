@@ -1,22 +1,34 @@
 // queues.rs
 
 use core::ptr::NonNull;
-use crate::drivers::aac::fib::{Fib, FibHeader};
-use crate::drivers::aac::regs::*;
-use core::mem::offset_of;
+use crate::sys::dev::aac::fib::{Fib, FibHeader};
+use crate::sys::dev::aac::regs::*;
 
 pub const PRODUCER: usize = 0;
 pub const CONSUMER: usize = 1;
 
+/// Number of entries per hardware queue.
+pub const HOST_NORM_CMD_ENTRIES: usize = 256;
+pub const HOST_HIGH_CMD_ENTRIES: usize = 64;
+pub const ADAP_NORM_CMD_ENTRIES: usize = 256;
+pub const ADAP_HIGH_CMD_ENTRIES: usize = 64;
+pub const HOST_NORM_RESP_ENTRIES: usize = 256;
+pub const HOST_HIGH_RESP_ENTRIES: usize = 64;
+pub const ADAP_NORM_RESP_ENTRIES: usize = 256;
+pub const ADAP_HIGH_RESP_ENTRIES: usize = 64;
+
+/// Total number of queues.
+pub const QUEUE_COUNT: usize = 8;
+
 pub const QUEUE_LAYOUT: [(usize, usize); 8] = [
-    (offset_of!(QueueTable, host_norm_cmd), HOST_NORM_CMD_ENTRIES),
-    (offset_of!(QueueTable, host_high_cmd), HOST_HIGH_CMD_ENTRIES),
-    (offset_of!(QueueTable, adap_norm_cmd), ADAP_NORM_CMD_ENTRIES),
-    (offset_of!(QueueTable, adap_high_cmd), ADAP_HIGH_CMD_ENTRIES),
-    (offset_of!(QueueTable, host_norm_resp), HOST_NORM_RESP_ENTRIES),
-    (offset_of!(QueueTable, host_high_resp), HOST_HIGH_RESP_ENTRIES),
-    (offset_of!(QueueTable, adap_norm_resp), ADAP_NORM_RESP_ENTRIES),
-    (offset_of!(QueueTable, adap_high_resp), ADAP_HIGH_RESP_ENTRIES),
+    (0, HOST_NORM_CMD_ENTRIES),
+    (core::mem::size_of::<[QueueEntry; HOST_NORM_CMD_ENTRIES]>(), HOST_HIGH_CMD_ENTRIES),
+    (0, ADAP_NORM_CMD_ENTRIES),
+    (0, ADAP_HIGH_CMD_ENTRIES),
+    (0, HOST_NORM_RESP_ENTRIES),
+    (0, HOST_HIGH_RESP_ENTRIES),
+    (0, ADAP_NORM_RESP_ENTRIES),
+    (0, ADAP_HIGH_RESP_ENTRIES),
 ];
 
 #[repr(C, packed)]
@@ -32,6 +44,7 @@ pub struct SgTable {
     pub count: u32,
     pub entry: SgEntry,
 }
+
 /// Single entry in the hardware queue.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
@@ -64,9 +77,6 @@ pub const HOST_NORM_RESP: usize = 4;
 pub const HOST_HIGH_RESP: usize = 5;
 pub const ADAP_NORM_RESP: usize = 6;
 pub const ADAP_HIGH_RESP: usize = 7;
-
-pub const PRODUCER: usize = 0;
-pub const CONSUMER: usize = 1;
 
 /// Manages the shared memory and FIB pool.
 pub struct QueueManager {
