@@ -33,7 +33,6 @@ exec qemu-system-x86_64 \
     -vga std \
     -usb \
     -device qemu-xhci \
-    -device usb-kbd,id=usbkbd \
     -m 512M \
     -smp 4 \
     -serial stdio \

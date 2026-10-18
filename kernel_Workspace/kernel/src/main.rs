@@ -179,6 +179,12 @@ pub fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
         println!("[mm] allocator initialization FAILED");
     }
 
+    // Re-assert the PS/2 keyboard input path early: the BIOS or a previous
+    // mode set may have left the 8042 with the keyboard interface inhibited
+    // (lockbit) and scanning disabled. Without this the keyboard is silent
+    // even though IRQ1 is unmasked and the handler is installed.
+    crate::terminal::restore_input();
+
     init_permissions();
 
     println!("[boot-dbg] step: gfx::init()...");

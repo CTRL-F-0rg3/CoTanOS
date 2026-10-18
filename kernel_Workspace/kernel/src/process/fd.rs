@@ -117,6 +117,14 @@ pub fn read_for(pid: u32, fd: i32, out: &mut [u8]) -> i32 {
     match f.kind {
         FdKind::Stdio => {
             if fd == 0 {
+                // PS/2 first: scancodes arrive through the IRQ handler into
+                // `KBUF`; USB is only a fallback.
+                if let Some(c) = crate::terminal::pop_char() {
+                    if !out.is_empty() {
+                        out[0] = c;
+                    }
+                    return 1;
+                }
                 match crate::drivers::usb::class::hid::keyboard::take_char() {
                     Some(c) => {
                         if !out.is_empty() {
