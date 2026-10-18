@@ -119,6 +119,16 @@ pub fn restore_input() {
     /// Enable the first PS/2 port. This is the bit a display mode set leaves
     /// set, and a disabled interface produces no scancode at all.
     const ENABLE_FIRST_PORT: u8 = 0xAE;
+    /// Write Command Byte to the 8042 controller (sent to port 0x64).
+    const WRITE_COMMAND_BYTE: u8 = 0x60;
+    /// Command byte bit 0: Keyboard Interrupt Enable (1 = enable IRQ1).
+    const CMD_BYTE_KBD_IRQ: u8 = 0x01;
+    /// Command byte bit 4: Keyboard Clock Enable (1 = enable keyboard clock).
+    const CMD_BYTE_KBD_CLK: u8 = 0x10;
+    /// Set Scancode Mode command (sent to data port 0x60).
+    const SET_SCANCODE_SET: u8 = 0xF0;
+    /// Scancode Set 1 argument for the Set Scancode Mode command.
+    const SCANCODE_SET_1: u8 = 0x01;
     /// Resume scanning at the device.
     const ENABLE_SCANNING: u8 = 0xF4;
     /// Status bit 0: an unread byte is waiting.
@@ -151,9 +161,22 @@ pub fn restore_input() {
         //    produces no reply, so there is nothing to wait for.
         status.write(ENABLE_FIRST_PORT);
 
+        // 2b. Controller command byte: enable keyboard IRQ (bit 0) and keyboard
+        //     clock (bit 4). Without bit 0 the 8042 never asserts IRQ1 when a
+        //     scancode arrives, so the keyboard looks dead even though the
+        //     interface itself is enabled.
+        status.write(WRITE_COMMAND_BYTE);
+        data.write(CMD_BYTE_KBD_IRQ | CMD_BYTE_KBD_CLK);
+
         // 3. Device-side: resume scanning. The acknowledgement is consumed by
         //    the keyboard IRQ, not here.
         data.write(ENABLE_SCANNING);
+
+        // 4. Switch the keyboard to scancode Set 1 (QEMU defaults to Set 2).
+        //    Command 0xF0 (Set Scancode Mode) + 0x01 (Set 1) goes to the data
+        //    port; each is acknowledged by the keyboard via IRQ.
+        data.write(SET_SCANCODE_SET);
+        data.write(SCANCODE_SET_1);
 
         let status_now = status.read();
         crate::serial::write_str(&alloc::format!(
@@ -267,6 +290,8 @@ fn scancode_to_char(code: u8) -> Option<char> {
 
     let c: char = match code {
         
+        0x01 => '\x1b', // Escape
+        0x0F => '\t',   // Tab
         0x1C => '\n',
         0x0E => '\x08',
         0x39 => ' ',

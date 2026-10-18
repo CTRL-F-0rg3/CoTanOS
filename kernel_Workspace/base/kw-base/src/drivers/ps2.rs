@@ -12,13 +12,22 @@ impl Ps2Controller {
         unsafe {
             outb(PS2_CMD, 0xAD);
             outb(PS2_CMD, 0xA7);
-            
+
             // Flush output buffer
             while (inb(PS2_STATUS) & 0x01) != 0 { inb(PS2_DATA); }
-            
-            // Enable devices
+
+            // Enable keyboard interface (clears the inhibit/lock bit)
             outb(PS2_CMD, 0xAE);
+
+            // Write command byte: enable keyboard IRQ (bit 0) and keyboard clock (bit 4)
+            outb(PS2_CMD, 0x60);
+            outb(PS2_DATA, 0x11);
+
+            // Enable devices (aux/mouse)
             outb(PS2_CMD, 0xA8);
+
+            // Enable scanning at the keyboard device
+            outb(PS2_DATA, 0xF4);
         }
     }
 

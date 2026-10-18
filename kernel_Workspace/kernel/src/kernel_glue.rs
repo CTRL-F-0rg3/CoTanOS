@@ -22,6 +22,11 @@ fn cstr_to_str<'a>(p: *const u8) -> Option<&'a str> {
 
 #[no_mangle]
 pub extern "C" fn k_input_key() -> i32 {
+    // PS/2 first: scancodes arrive through the IRQ handler into `KBUF`; USB is
+    // only a fallback for machines without a PS/2 port.
+    if let Some(c) = crate::terminal::pop_char() {
+        return c as i32;
+    }
     match crate::drivers::usb::class::hid::keyboard::take_char() {
         Some(c) => c as i32,
         None => -1,
