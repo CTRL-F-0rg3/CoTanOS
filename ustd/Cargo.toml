@@ -38,6 +38,8 @@ members = [
     "apps/plasma",
     "apps/clock",
     "apps/paint",
+    "apps/mandel",
+    "apps/titanus",
     "compat/elf",
 ]
 # Added as they are written: "compat/loader", "compat/vdso".

@@ -149,6 +149,8 @@ PKG=(
     -p tgs-plasma
     -p tgs-clock
     -p tgs-paint
+    -p tgs-mandel
+    -p tgs-titanus
     "${STD_FLAGS[@]}"
     "${PROFILE_ARGS[@]}"
 )
@@ -165,7 +167,7 @@ BIN_DIR="$HERE/target/x86_64-trangorge-uspace/$PROFILE"
 
 echo
 echo "built userspace binaries:"
-for bin in tgs-init tgs-pattern tgs-plasma tgs-clock tgs-paint; do
+for bin in tgs-init tgs-pattern tgs-plasma tgs-clock tgs-paint mandel titanus; do
     echo "  $BIN_DIR/$bin"
     if command -v file >/dev/null 2>&1; then
         file "$BIN_DIR/$bin"

@@ -1,0 +1,19 @@
+[package]
+name = "tgs-apps-std"
+description = "TrangorgeOS std applications: a Mandelbrot renderer and friends."
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[[bin]]
+name = "mandel"
+path = "src/mandel.rs"
+
+[dependencies]
+# `tgs-rt` defines `_start` and the panic hook; `tgs-libc` (with `sysroot`)
+# defines the `malloc`/`pthread_*` symbols `std` links against. It is a *direct*
+# dependency on purpose: a transitive-only rlib can be dropped from the link,
+# which is exactly the "undefined malloc" failure this line prevents.
+tgs-rt = { path = "../../../ustd/rt" }
+tgs-libc = { path = "../../../ustd/libc", features = ["sysroot"] }

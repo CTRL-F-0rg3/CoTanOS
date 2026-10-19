@@ -40,15 +40,6 @@ mod terminal;
 mod tgcomm;
 
 #[cfg(target_arch = "x86_64")]
-mod allde;
-
-#[cfg(target_arch = "x86_64")]
-mod i3dw;
-
-#[cfg(target_arch = "x86_64")]
-mod titanus;
-
-#[cfg(target_arch = "x86_64")]
 mod trampoline_rings;
 
 #[cfg(target_arch = "x86_64")]

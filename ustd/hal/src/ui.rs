@@ -5,7 +5,7 @@
 //! rather than the single `rax` that [`crate::gate::Syscall::call`] returns, so
 //! it gets its own gate instead of being forced through that trait.
 
-use crate::sysnum::{TGS_UI_OPEN, UI_FONT_VA};
+use crate::sysnum::{TGS_KEY, TGS_MOUSE, TGS_UI_OPEN, UI_FONT_VA};
 
 /// A kernel-provided framebuffer mapped into the caller's address space.
 #[derive(Debug, Clone, Copy)]
@@ -63,6 +63,67 @@ pub fn ui_open() -> Option<Framebuffer> {
     #[cfg(not(target_arch = "x86_64"))]
     {
         let _ = (TGS_UI_OPEN, UI_FONT_VA);
+        None
+    }
+}
+
+/// Poll the PS/2 mouse via `TGS_MOUSE`. Returns `(dx, dy, buttons)` or `None`
+/// when the kernel reports no packet. `dy` is the raw PS/2 value (inverted).
+pub fn mouse_poll() -> Option<(i32, i32, u32)> {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let mut buttons: u64;
+        let mut rdi: u64;
+        let mut rsi: u64;
+
+        // SAFETY: `int 0x80` is installed at DPL 3 and this call carries no
+        // pointers. The kernel writes buttons/rdi/rsi which are read back here.
+        core::arch::asm!(
+            "int 0x80",
+            inlateout("rax") TGS_MOUSE => buttons,
+            lateout("rdi") rdi,
+            lateout("rsi") rsi,
+            options(nostack),
+        );
+
+        if buttons == u64::MAX {
+            None
+        } else {
+            Some((rdi as i64 as i32, rsi as i64 as i32, buttons as u32))
+        }
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = TGS_MOUSE;
+        None
+    }
+}
+
+/// Poll one key from the USB HID keyboard via `TGS_KEY`. `None` when nothing.
+pub fn key_poll() -> Option<char> {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let mut c: u64;
+
+        // SAFETY: `int 0x80` is installed at DPL 3 and this call carries no
+        // pointers. The kernel returns the char (0 = nothing) in `rax`.
+        core::arch::asm!(
+            "int 0x80",
+            inlateout("rax") TGS_KEY => c,
+            options(nostack),
+        );
+
+        if c == 0 {
+            None
+        } else {
+            Some((c as u8) as char)
+        }
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = TGS_KEY;
         None
     }
 }

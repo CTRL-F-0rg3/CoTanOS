@@ -49,6 +49,20 @@ impl Canvas {
                 .write_volatile(color);
         }
     }
+
+    /// Read one pixel, clipped to the buffer (`0` outside).
+    #[inline]
+    pub fn get(&self, x: i32, y: i32) -> Color {
+        if x < 0 || y < 0 || (x as u32) >= self.width || (y as u32) >= self.height {
+            return 0;
+        }
+        // SAFETY: the bounds check above keeps the index inside the mapped buffer.
+        unsafe {
+            self.base
+                .add(y as usize * self.stride as usize + x as usize)
+                .read_volatile()
+        }
+    }
 }
 
 /// Open the framebuffer and wrap it in a [`Canvas`].
