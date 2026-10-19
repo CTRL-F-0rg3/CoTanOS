@@ -714,17 +714,9 @@ fn execute(line: &str) {
             crate::allde::run();
         }
         "titanus" => {
-            // Titanus DE: kafelkowo-pływający pulpit (podgląd na framebufferze
-            // jądra). Wciśnij klawisz, aby wrócić do terminala.
-            match crate::gfx::demo::draw_titanus() {
-                true => {
-                    crate::println!("titanus: pulpit Titanus DE — wciśnij klawisz aby wrócić");
-                    while kbuf_pop().is_none() {
-                        x86_64::instructions::hlt();
-                    }
-                }
-                false => crate::println!("titanus: brak framebuffera (gfx nieaktywne)"),
-            }
+            // Titanus DE: interaktywny pulpit (kafelki + pływające, dok po
+            // prawej). Przejmuje wejście; ESC wraca do terminala.
+            crate::titanus::run();
         }
         "reboot" => {
             crate::println!("rebooting...");
