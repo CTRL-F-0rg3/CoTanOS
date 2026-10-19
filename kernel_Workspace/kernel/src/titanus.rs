@@ -6,7 +6,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::gfx::font::FONT8X8;
-use crate::gfx::framebuffer::{rgb, Framebuffer, PixelFormat};
+use crate::gfx::framebuffer::{Framebuffer, PixelFormat};
 
 extern "C" {
     fn mouse_init();
@@ -30,6 +30,7 @@ const KEY_UP: u32 = 0x106;
 const KEY_TAB: u32 = 0x10A;
 const KEY_F2: u32 = 0x113;
 const KEY_F3: u32 = 0x114;
+const KEY_F5: u32 = 0x116;
 
 // Cosmic/Hyprland palette: ciemny gradient + niebieski akcent.
 const BG_TOP: u32 = 0xFF23273A;
@@ -143,34 +144,122 @@ fn fill_rounded(fb: &mut Framebuffer, x: u32, y: u32, w: u32, h: u32, r: u32, c:
     }
 }
 
-/// Pionowy gradient tapety (Cosmic-like).
-fn wallpaper(fb: &mut Framebuffer) {
-    let h = fb.height as u32;
+/// Styl tapety. Kernel nie ładuje PNG, więc tapety są proceduralne (generowane).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Wallpaper {
+    Cosmic, // pionowy gradient (ciemnoniebieski)
+    Aurora, // ukośny gradient niebieski → fioletowy
+    Radial, // poświata ze środka
+    Ripple, // koncentryczne pierścienie
+    Grid,   // subtelna siatka
+    Waves,  // fale
+}
+
+impl Wallpaper {
+    const ALL: [Wallpaper; 6] = [
+        Wallpaper::Cosmic,
+        Wallpaper::Aurora,
+        Wallpaper::Radial,
+        Wallpaper::Ripple,
+        Wallpaper::Grid,
+        Wallpaper::Waves,
+    ];
+
+    fn next(self) -> Wallpaper {
+        let idx = Self::ALL.iter().position(|&w| w == self).unwrap_or(0);
+        Self::ALL[(idx + 1) % Self::ALL.len()]
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Wallpaper::Cosmic => "Cosmic",
+            Wallpaper::Aurora => "Aurora",
+            Wallpaper::Radial => "Radial",
+            Wallpaper::Ripple => "Ripple",
+            Wallpaper::Grid => "Grid",
+            Wallpaper::Waves => "Waves",
+        }
+    }
+}
+
+/// Miesza dwa kolory 0xRRGGBB w proporcji `t` (0..=255).
+fn lerp_color(a: u32, b: u32, t: u32) -> u32 {
+    let t = t.min(255);
+    let inv = 255 - t;
+    let r = (((a >> 16) & 0xFF) * inv + ((b >> 16) & 0xFF) * t) / 255;
+    let g = (((a >> 8) & 0xFF) * inv + ((b >> 8) & 0xFF) * t) / 255;
+    let bl = ((a & 0xFF) * inv + (b & 0xFF) * t) / 255;
+    0xFF00_0000 | (r << 16) | (g << 8) | bl
+}
+
+/// Kolor piksela tapety dla danego stylu (czysta arytmetyka całkowita).
+fn wallpaper_pixel(style: Wallpaper, x: u32, y: u32, w: u32, h: u32) -> u32 {
+    match style {
+        Wallpaper::Cosmic => {
+            let t = if h <= 1 { 0 } else { y * 255 / (h - 1) };
+            lerp_color(BG_TOP, BG_BOTTOM, t)
+        }
+        Wallpaper::Aurora => {
+            let denom = (w + h).saturating_sub(2).max(1);
+            let t = (x + y) * 255 / denom;
+            lerp_color(0xFF23273A, 0xFF3A1E4E, t)
+        }
+        Wallpaper::Radial => {
+            let dx = x as i32 - (w / 2) as i32;
+            let dy = y as i32 - (h / 2) as i32;
+            let dist = isqrt((dx * dx + dy * dy) as u32);
+            let maxd = isqrt(((w / 2) * (w / 2) + (h / 2) * (h / 2)) as u32).max(1);
+            let t = (dist * 255 / maxd).min(255);
+            lerp_color(0xFF2A4A7A, 0xFF0A0C16, t)
+        }
+        Wallpaper::Ripple => {
+            let dx = x as i32 - (w / 2) as i32;
+            let dy = y as i32 - (h / 2) as i32;
+            let dist = isqrt((dx * dx + dy * dy) as u32);
+            if (dist / 48) % 2 == 0 { 0xFF1C2233 } else { 0xFF12151F }
+        }
+        Wallpaper::Grid => {
+            if x % 40 == 0 || y % 40 == 0 { 0xFF141826 } else { 0xFF10131E }
+        }
+        Wallpaper::Waves => {
+            match ((x + y) / 28) % 5 {
+                0 => 0xFF16203A,
+                1 => 0xFF101828,
+                2 => 0xFF1A2438,
+                3 => 0xFF0E1420,
+                _ => 0xFF121A2C,
+            }
+        }
+    }
+}
+
+/// Pełna tapeta (dla danego stylu).
+fn wallpaper(fb: &mut Framebuffer, style: Wallpaper) {
     let w = fb.width as u32;
+    let h = fb.height as u32;
     for y in 0..h {
-        let t = if h <= 1 { 0 } else { y * 255 / (h - 1) };
-        let inv = 255 - t;
-        let r = (((BG_TOP >> 16) & 0xFF) * inv + ((BG_BOTTOM >> 16) & 0xFF) * t) / 255;
-        let g = (((BG_TOP >> 8) & 0xFF) * inv + ((BG_BOTTOM >> 8) & 0xFF) * t) / 255;
-        let b = ((BG_TOP & 0xFF) * inv + (BG_BOTTOM & 0xFF) * t) / 255;
-        fill(fb, 0, y, w, 1, rgb(r, g, b));
+        for x in 0..w {
+            set(fb, x, y, wallpaper_pixel(style, x, y, w, h));
+        }
     }
 }
 
 /// Przywraca tapetę tylko w jednym prostokącie (dirty wallpaper) — nie całą.
-fn wallpaper_rect(fb: &mut Framebuffer, x: u32, y: u32, w: u32, h: u32) {
-    let full_h = fb.height as u32;
+fn wallpaper_rect(fb: &mut Framebuffer, x: u32, y: u32, w: u32, h: u32, style: Wallpaper) {
+    let fw = fb.width as u32;
+    let fh = fb.height as u32;
     for row in 0..h {
         let gy = y + row;
-        if gy >= full_h {
+        if gy >= fh {
             break;
         }
-        let t = if full_h <= 1 { 0 } else { gy * 255 / (full_h - 1) };
-        let inv = 255 - t;
-        let r = (((BG_TOP >> 16) & 0xFF) * inv + ((BG_BOTTOM >> 16) & 0xFF) * t) / 255;
-        let g = (((BG_TOP >> 8) & 0xFF) * inv + ((BG_BOTTOM >> 8) & 0xFF) * t) / 255;
-        let b = ((BG_TOP & 0xFF) * inv + (BG_BOTTOM & 0xFF) * t) / 255;
-        fill(fb, x, gy, w, 1, rgb(r, g, b));
+        for col in 0..w {
+            let gx = x + col;
+            if gx >= fw {
+                break;
+            }
+            set(fb, gx, gy, wallpaper_pixel(style, gx, gy, fw, fh));
+        }
     }
 }
 
@@ -202,9 +291,9 @@ fn draw_shape(fb: &mut Framebuffer, x: i32, y: i32, c: u32) {
 }
 
 fn draw_cursor(fb: &mut Framebuffer, x: u32, y: u32) {
-    for (dx, dy) in [(0i32, 1i32), (0, -1), (1, 0), (-1, 0)] {
-        draw_shape(fb, x as i32 + dx, y as i32 + dy, 0xFF101010);
-    }
+    // Bez obrysu przesuniętego o ±1 px: wychodziłby poza 16×16 obszar
+    // zapisu/przywrócenia i zostawiał artefakty. Biała strzałka jest widoczna
+    // na ciemnym tle.
     draw_shape(fb, x as i32, y as i32, 0xFFFFFFFF);
 }
 
@@ -245,6 +334,8 @@ struct Window {
     z: u32,
     minimized: bool,
     input: String,
+    /// Historia komend/wyników terminala (linie wyświetlane w oknie).
+    lines: Vec<String>,
     /// Czy okno wymaga przerysowania (dirty window).
     dirty: bool,
 }
@@ -262,6 +353,10 @@ struct Titanus {
     wallpaper_dirty: Vec<(u32, u32, u32, u32)>,
     /// Czy dok wymaga przerysowania (dirty widget).
     dock_dirty: bool,
+    /// Aktualny styl tapety (zarządzanie tapetami).
+    wallpaper: Wallpaper,
+    /// Pełne przerysowanie (po zmianie tapety / starcie).
+    full_redraw: bool,
 }
 
 impl Titanus {
@@ -277,6 +372,8 @@ impl Titanus {
             dragging: None,
             wallpaper_dirty: Vec::new(),
             dock_dirty: true,
+            wallpaper: Wallpaper::Cosmic,
+            full_redraw: true,
         };
         // Domyślny układ: terminal kafelkowy + okno powitalne pływające.
         t.add_window(Kind::Terminal, false);
@@ -304,6 +401,7 @@ impl Titanus {
             z: self.next_z,
             minimized: false,
             input: String::new(),
+            lines: Vec::new(),
             dirty: true,
         });
         self.next_z += 1;
@@ -373,6 +471,13 @@ impl Titanus {
         self.focus_to(next);
     }
 
+    /// Przełącza na następną tapetę (zarządzanie tapetami).
+    fn cycle_wallpaper(&mut self) {
+        self.wallpaper = self.wallpaper.next();
+        self.full_redraw = true;
+        self.dock_dirty = true;
+    }
+
     /// Obszar roboczy: ekran minus pionowy dok po prawej.
     fn work_area(&self) -> (u32, u32, u32, u32) {
         (0, 0, self.screen_w.saturating_sub(DOCK_W), self.screen_h)
@@ -440,6 +545,11 @@ impl Titanus {
             }
             task_y += side + 6;
         }
+        // Przycisk tapety (na dole doku) — cykliczna zmiana stylu.
+        let wp_y = self.screen_h.saturating_sub(48);
+        if x >= sx && x < sx + side && y >= wp_y && y < wp_y + side {
+            self.cycle_wallpaper();
+        }
     }
 
     fn handle_click(&mut self) {
@@ -500,25 +610,93 @@ impl Titanus {
         if self.focused >= self.windows.len() {
             return;
         }
-        {
-            let focused = self.focused;
-            let w = &mut self.windows[focused];
-            if w.kind == Kind::Terminal {
-                match c {
-                    '\x08' => {
-                        w.input.pop();
-                    }
-                    '\n' => {
-                        w.input.clear();
-                    }
-                    c if (c as u32) >= 0x20 && (c as u32) < 0x7F => {
-                        w.input.push(c);
-                    }
-                    _ => {}
-                }
+        let focused = self.focused;
+        if self.windows[focused].kind != Kind::Terminal {
+            // Poza oknem terminala znaki ignorujemy.
+            return;
+        }
+        match c {
+            '\x08' => {
+                self.windows[focused].input.pop();
+                self.windows[focused].dirty = true;
+            }
+            '\n' => {
+                let cmd = core::mem::take(&mut self.windows[focused].input);
+                self.run_terminal_command(focused, cmd);
+            }
+            c if (c as u32) >= 0x20 && (c as u32) < 0x7F => {
+                self.windows[focused].input.push(c);
+                self.windows[focused].dirty = true;
+            }
+            _ => {}
+        }
+    }
+
+    /// Wykonuje komendę wpisaną w oknie terminala i dopisuje wynik do historii.
+    fn run_terminal_command(&mut self, idx: usize, cmd: String) {
+        if idx >= self.windows.len() || self.windows[idx].kind != Kind::Terminal {
+            return;
+        }
+        self.windows[idx]
+            .lines
+            .push(format!("user@titanus:~$ {}", cmd));
+        let t = cmd.trim();
+        match t {
+            "" => {}
+            "help" => {
+                self.windows[idx].lines.push("help   - ta lista".to_string());
+                self.windows[idx].lines.push("echo X - wypisz tekst X".to_string());
+                self.windows[idx].lines.push("clear  - wyczysc ekran".to_string());
+                self.windows[idx].lines.push("uname  - wersja systemu".to_string());
+                self.windows[idx].lines.push("list   - lista okien".to_string());
+                self.windows[idx].lines.push("new    - nowy terminal".to_string());
+                self.windows[idx].lines.push("wall   - zmien tapete".to_string());
+                self.windows[idx].lines.push("exit   - zamknij to okno".to_string());
+            }
+            "clear" => {
+                self.windows[idx].lines.clear();
+            }
+            "uname" => {
+                self.windows[idx]
+                    .lines
+                    .push("TrangorgeOS (Titanus DE, kafelki + plywajace)".to_string());
+            }
+            "list" => {
+                let list: Vec<String> = self
+                    .windows
+                    .iter()
+                    .enumerate()
+                    .map(|(i, w)| format!("[{}] {} z={}", i, w.title, w.z))
+                    .collect();
+                self.windows[idx].lines.extend(list);
+            }
+            "new" => {
+                self.add_window(Kind::Terminal, false);
+                self.windows[idx].lines.push("otwarto nowy terminal".to_string());
+            }
+            "wall" => {
+                self.cycle_wallpaper();
+                self.windows[idx].lines.push("zmieniono tapete".to_string());
+            }
+            "exit" => {
+                self.close_focused();
+                return;
+            }
+            _ if t.starts_with("echo ") => {
+                self.windows[idx].lines.push(t[5..].to_string());
+            }
+            _ => {
+                self.windows[idx]
+                    .lines
+                    .push(format!("nieznana komenda: {}", t));
             }
         }
-        self.windows[self.focused].dirty = true;
+        // Przytnij historię, żeby zmieściła się w oknie.
+        while self.windows[idx].lines.len() > 40 {
+            self.windows[idx].lines.remove(0);
+        }
+        self.windows[idx].dirty = true;
+        self.dock_dirty = true;
     }
 
     fn handle_keycode(&mut self, k: u32) -> bool {
@@ -527,6 +705,7 @@ impl Titanus {
             KEY_TAB => self.focus_next(),
             KEY_F2 => self.close_focused(),
             KEY_F3 => self.add_window(Kind::Terminal, false),
+            KEY_F5 => self.cycle_wallpaper(),
             KEY_RIGHT => self.cursor_x = self.cursor_x.saturating_add(20).min(self.screen_w.saturating_sub(1)),
             KEY_LEFT => self.cursor_x = self.cursor_x.saturating_sub(20),
             KEY_UP => self.cursor_y = self.cursor_y.saturating_sub(20),
@@ -552,8 +731,18 @@ impl Titanus {
         let cy = y + TITLE_H + 8;
         match win.kind {
             Kind::Terminal => {
-                text(fb, x + 6, cy, "user@titanus:~$", PROMPT);
-                text(fb, x + 6, cy + 12, &win.input, TEXT);
+                // Historia komend (ostatnie wiersze mieszczące się w oknie),
+                // potem prompt + bieżące wejście.
+                let content_h = h.saturating_sub(TITLE_H + 8 + 8);
+                let max_lines = (content_h / 13).max(2) as usize;
+                let skip = win.lines.len().saturating_sub(max_lines.saturating_sub(1));
+                let mut ly = cy;
+                for line in win.lines.iter().skip(skip) {
+                    text(fb, x + 6, ly, line, TEXT);
+                    ly += 13;
+                }
+                text(fb, x + 6, ly, "user@titanus:~$", PROMPT);
+                text(fb, x + 6 + 8 * 14, ly, &win.input, TEXT);
             }
             Kind::Monitor => {
                 let cw = w.saturating_sub(14);
@@ -594,11 +783,16 @@ impl Titanus {
             text(fb, sx + side / 2 - 3, task_y + side / 2 - 4, &label, TEXT);
             task_y += side + 6;
         }
+        // Przycisk tapety (na dole doku) — pierwsza litera nazwy stylu.
+        let wp_y = self.screen_h.saturating_sub(48);
+        fill_rounded(fb, sx, wp_y, side, side, 8, DOCK_ENTRY);
+        let wpl: String = self.wallpaper.name().chars().next().map(|c| c.to_string()).unwrap_or_default();
+        text(fb, sx + side / 2 - 3, wp_y + side / 2 - 4, &wpl, TEXT);
         text(fb, dx + 8, self.screen_h.saturating_sub(16), "14:32", TEXT);
     }
 
     fn render_scene(&self, fb: &mut Framebuffer) {
-        wallpaper(fb);
+        wallpaper(fb, self.wallpaper);
         let (wx, wy, ww, wh) = self.work_area();
         let tiled: Vec<usize> = self
             .windows
@@ -637,41 +831,70 @@ impl Titanus {
     }
 
     /// Selektywne odświeżenie: tylko brudne regiony, nie cała scena.
+    ///
+    /// Kolejność warstw (z-order) jest tu jawnie egzekwowana:
+    ///   0. tapeta (tylko brudne prostokąty),
+    ///   1. okna (kafelki w kolumnach, pływające wg `z`),
+    ///   2. dok (pionowy, po prawej),
+    ///   3. kursor (rysowany poza tą metodą, na samym wierzchu).
     fn apply(&mut self, fb: &mut Framebuffer) {
         // 1. Tapeta tylko w brudnych prostokątach (dirty wallpaper).
         let wd = core::mem::take(&mut self.wallpaper_dirty);
-        for (x, y, w, h) in wd {
-            wallpaper_rect(fb, x, y, w, h);
+        for &(x, y, w, h) in &wd {
+            wallpaper_rect(fb, x, y, w, h, self.wallpaper);
         }
-        // 2. Brudne okna + okna nad nimi, które się nakładają (z-order).
-        let dirty: Vec<usize> = self
-            .windows
-            .iter()
-            .enumerate()
-            .filter(|(_, w)| w.dirty && !w.minimized)
-            .map(|(i, _)| i)
-            .collect();
-        for &di in &dirty {
-            let Some((dx, dy, dw, dh)) = self.rect_of(di) else { continue };
-            self.draw_window(fb, di, dx, dy, dw, dh);
-            for j in 0..self.windows.len() {
-                if j == di || self.windows[j].minimized {
-                    continue;
-                }
-                if self.windows[j].z <= self.windows[di].z {
-                    continue;
-                }
-                if let Some((jx, jy, jw, jh)) = self.rect_of(j) {
-                    if rects_overlap((dx, dy, dw, dh), (jx, jy, jw, jh)) {
-                        self.draw_window(fb, j, jx, jy, jw, jh);
+
+        // 2. Zbierz okna do przerysowania i namaluj je w kolejności z-order:
+        //    - okna brudne,
+        //    - okna leżące NAD brudnym oknem, które się z nim nakładają,
+        //    - okna nakładające się na przywróconą tapetę (inaczej przywrócenie
+        //      tapety "zjadłoby" pływające okna i zostawiło jaśniejszy ślad).
+        let mut to_redraw: Vec<usize> = Vec::new();
+        for (i, w) in self.windows.iter().enumerate() {
+            if w.minimized {
+                continue;
+            }
+            let Some((wx, wy, ww, wh)) = self.rect_of(i) else { continue };
+            let mut mark = w.dirty;
+            if !mark {
+                for (j, other) in self.windows.iter().enumerate() {
+                    if j == i || other.minimized || !other.dirty {
+                        continue;
+                    }
+                    if other.z < self.windows[i].z {
+                        if let Some((ox, oy, ow, oh)) = self.rect_of(j) {
+                            if rects_overlap((wx, wy, ww, wh), (ox, oy, ow, oh)) {
+                                mark = true;
+                                break;
+                            }
+                        }
                     }
                 }
+            }
+            if !mark {
+                for &(dx, dy, dw, dh) in &wd {
+                    if rects_overlap((wx, wy, ww, wh), (dx, dy, dw, dh)) {
+                        mark = true;
+                        break;
+                    }
+                }
+            }
+            if mark {
+                to_redraw.push(i);
+            }
+        }
+        to_redraw.sort_by_key(|&i| self.windows[i].z);
+        to_redraw.dedup();
+        for i in to_redraw {
+            if let Some((x, y, w, h)) = self.rect_of(i) {
+                self.draw_window(fb, i, x, y, w, h);
             }
         }
         for w in self.windows.iter_mut() {
             w.dirty = false;
         }
-        // 3. Dok (dirty widget).
+
+        // 3. Dok (dirty widget), nad oknami.
         if self.dock_dirty {
             self.draw_dock(fb);
             self.dock_dirty = false;
@@ -712,6 +935,9 @@ pub fn run() {
         }
 
         let moved = dx != 0 || dy != 0;
+        // PS/2 zgłasza Y odwrócone (ruch w górę = dodatnie dy); negujemy raz
+        // i używamy tej samej wartości dla kursora i przeciągania okna.
+        let ndy = -dy;
 
         // Zdejmij kursor, zanim zmieni się scena.
         if moved {
@@ -720,11 +946,11 @@ pub fn run() {
 
         // Przeciąganie pływającego okna.
         if d.dragging.is_some() && moved {
-            d.handle_drag(dx, dy);
+            d.handle_drag(dx, ndy);
         }
         if moved {
             d.cursor_x = (d.cursor_x as i32 + dx).max(0).min(sw as i32 - 1) as u32;
-            d.cursor_y = (d.cursor_y as i32 + dy).max(0).min(sh as i32 - 1) as u32;
+            d.cursor_y = (d.cursor_y as i32 + ndy).max(0).min(sh as i32 - 1) as u32;
             cx = d.cursor_x;
             cy = d.cursor_y;
         }
@@ -748,9 +974,13 @@ pub fn run() {
             }
         }
 
-        // Selektywne odświeżenie (tylko brudne regiony).
-        let redrew = d.needs_redraw();
-        if redrew {
+        // Pełne odświeżenie (zmiana tapety) albo selektywne (brudne regiony).
+        let redrew = d.full_redraw || d.needs_redraw();
+        if d.full_redraw {
+            d.render_scene(&mut *fb);
+            d.clear_dirty();
+            d.full_redraw = false;
+        } else if d.needs_redraw() {
             d.apply(&mut *fb);
         }
 
