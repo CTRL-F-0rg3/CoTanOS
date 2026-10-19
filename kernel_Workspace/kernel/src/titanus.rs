@@ -157,6 +157,31 @@ fn wallpaper(fb: &mut Framebuffer) {
     }
 }
 
+/// Przywraca tapetę tylko w jednym prostokącie (dirty wallpaper) — nie całą.
+fn wallpaper_rect(fb: &mut Framebuffer, x: u32, y: u32, w: u32, h: u32) {
+    let full_h = fb.height as u32;
+    for row in 0..h {
+        let gy = y + row;
+        if gy >= full_h {
+            break;
+        }
+        let t = if full_h <= 1 { 0 } else { gy * 255 / (full_h - 1) };
+        let inv = 255 - t;
+        let r = (((BG_TOP >> 16) & 0xFF) * inv + ((BG_BOTTOM >> 16) & 0xFF) * t) / 255;
+        let g = (((BG_TOP >> 8) & 0xFF) * inv + ((BG_BOTTOM >> 8) & 0xFF) * t) / 255;
+        let b = ((BG_TOP & 0xFF) * inv + (BG_BOTTOM & 0xFF) * t) / 255;
+        fill(fb, x, gy, w, 1, rgb(r, g, b));
+    }
+}
+
+/// Czy dwa prostokąty się nakładają.
+fn rects_overlap(a: (u32, u32, u32, u32), b: (u32, u32, u32, u32)) -> bool {
+    let (ax, ay, aw, ah) = a;
+    let (bx, by, bw, bh) = b;
+    ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah
+}
+
+
 // ── cursor (dirty: zapamiętaj/przywróć 16x16 pod kursorem) ───────────────────
 
 fn draw_shape(fb: &mut Framebuffer, x: i32, y: i32, c: u32) {
@@ -220,6 +245,8 @@ struct Window {
     z: u32,
     minimized: bool,
     input: String,
+    /// Czy okno wymaga przerysowania (dirty window).
+    dirty: bool,
 }
 
 struct Titanus {
@@ -231,7 +258,10 @@ struct Titanus {
     screen_w: u32,
     screen_h: u32,
     dragging: Option<usize>,
-    dirty: bool,
+    /// Prostokąty, w których trzeba przywrócić tapetę (dirty wallpaper).
+    wallpaper_dirty: Vec<(u32, u32, u32, u32)>,
+    /// Czy dok wymaga przerysowania (dirty widget).
+    dock_dirty: bool,
 }
 
 impl Titanus {
@@ -245,7 +275,8 @@ impl Titanus {
             screen_w: sw,
             screen_h: sh,
             dragging: None,
-            dirty: true,
+            wallpaper_dirty: Vec::new(),
+            dock_dirty: true,
         };
         // Domyślny układ: terminal kafelkowy + okno powitalne pływające.
         t.add_window(Kind::Terminal, false);
@@ -273,33 +304,64 @@ impl Titanus {
             z: self.next_z,
             minimized: false,
             input: String::new(),
+            dirty: true,
         });
         self.next_z += 1;
         self.focused = self.windows.len() - 1;
-        self.dirty = true;
+        if !floating {
+            // Kafelkowanie się przeliczyło: przywróć tapetę w obszarze roboczym.
+            let (wx, wy, ww, wh) = self.work_area();
+            self.wallpaper_dirty.push((wx, wy, ww, wh));
+            for w in self.windows.iter_mut() {
+                if !w.floating {
+                    w.dirty = true;
+                }
+            }
+        }
+        self.dock_dirty = true;
     }
 
     fn close_focused(&mut self) {
         if self.focused >= self.windows.len() {
             return;
         }
-        self.windows.remove(self.focused);
-        if self.windows.is_empty() {
-            self.focused = usize::MAX;
-        } else {
-            self.focused = self.focused.min(self.windows.len() - 1);
+        let was_floating = self.windows[self.focused].floating;
+        // Przywróć tapetę pod zamykanym oknem.
+        if let Some(r) = self.rect_of(self.focused) {
+            self.wallpaper_dirty.push(r);
         }
-        self.dirty = true;
+        self.windows.remove(self.focused);
+        self.focused = if self.windows.is_empty() {
+            usize::MAX
+        } else {
+            self.focused.min(self.windows.len() - 1)
+        };
+        if !was_floating {
+            // Kafelkowanie się przeliczyło: cały obszar roboczy + kafelki.
+            let (wx, wy, ww, wh) = self.work_area();
+            self.wallpaper_dirty.push((wx, wy, ww, wh));
+            for w in self.windows.iter_mut() {
+                if !w.floating {
+                    w.dirty = true;
+                }
+            }
+        }
+        self.dock_dirty = true;
     }
 
     fn focus_to(&mut self, idx: usize) {
         if idx >= self.windows.len() {
             return;
         }
+        let old = self.focused;
         self.focused = idx;
         self.next_z += 1;
         self.windows[idx].z = self.next_z;
-        self.dirty = true;
+        if old < self.windows.len() {
+            self.windows[old].dirty = true;
+        }
+        self.windows[idx].dirty = true;
+        self.dock_dirty = true;
     }
 
     fn focus_next(&mut self) {
@@ -387,16 +449,27 @@ impl Titanus {
             return;
         }
         let Some(i) = self.window_at(x, y) else { return };
-        let Some((rx, ry, rw, _)) = self.rect_of(i) else { return };
+        let Some((rx, ry, rw, rh)) = self.rect_of(i) else { return };
         // Przycisk zamknięcia (x w prawym górnym rogu paska tytułu).
         if x >= rx + rw - 16 && x < rx + rw - 2 && y >= ry + 2 && y < ry + TITLE_H {
+            let was_floating = self.windows[i].floating;
+            self.wallpaper_dirty.push((rx, ry, rw, rh));
             self.windows.remove(i);
             self.focused = if self.windows.is_empty() {
                 usize::MAX
             } else {
                 self.focused.min(self.windows.len() - 1)
             };
-            self.dirty = true;
+            if !was_floating {
+                let (wx, wy, ww, wh) = self.work_area();
+                self.wallpaper_dirty.push((wx, wy, ww, wh));
+                for w in self.windows.iter_mut() {
+                    if !w.floating {
+                        w.dirty = true;
+                    }
+                }
+            }
+            self.dock_dirty = true;
             return;
         }
         self.focus_to(i);
@@ -411,13 +484,16 @@ impl Titanus {
         if !self.windows[i].floating {
             return;
         }
+        // Stary prostokąt okna → przywróć tam tapetę.
+        self.wallpaper_dirty
+            .push((self.windows[i].x, self.windows[i].y, self.windows[i].w, self.windows[i].h));
         let max_x = self.screen_w.saturating_sub(self.windows[i].w) as i64;
         let max_y = self.screen_h.saturating_sub(self.windows[i].h) as i64;
         let nx = (self.windows[i].x as i64 + dx as i64).clamp(0, max_x) as u32;
         let ny = (self.windows[i].y as i64 + dy as i64).clamp(0, max_y) as u32;
         self.windows[i].x = nx;
         self.windows[i].y = ny;
-        self.dirty = true;
+        self.windows[i].dirty = true;
     }
 
     fn type_char(&mut self, c: char) {
@@ -442,7 +518,7 @@ impl Titanus {
                 }
             }
         }
-        self.dirty = true;
+        self.windows[self.focused].dirty = true;
     }
 
     fn handle_keycode(&mut self, k: u32) -> bool {
@@ -545,6 +621,62 @@ impl Titanus {
         }
         self.draw_dock(fb);
     }
+
+    fn needs_redraw(&self) -> bool {
+        !self.wallpaper_dirty.is_empty()
+            || self.dock_dirty
+            || self.windows.iter().any(|w| w.dirty)
+    }
+
+    fn clear_dirty(&mut self) {
+        self.wallpaper_dirty.clear();
+        self.dock_dirty = false;
+        for w in self.windows.iter_mut() {
+            w.dirty = false;
+        }
+    }
+
+    /// Selektywne odświeżenie: tylko brudne regiony, nie cała scena.
+    fn apply(&mut self, fb: &mut Framebuffer) {
+        // 1. Tapeta tylko w brudnych prostokątach (dirty wallpaper).
+        let wd = core::mem::take(&mut self.wallpaper_dirty);
+        for (x, y, w, h) in wd {
+            wallpaper_rect(fb, x, y, w, h);
+        }
+        // 2. Brudne okna + okna nad nimi, które się nakładają (z-order).
+        let dirty: Vec<usize> = self
+            .windows
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| w.dirty && !w.minimized)
+            .map(|(i, _)| i)
+            .collect();
+        for &di in &dirty {
+            let Some((dx, dy, dw, dh)) = self.rect_of(di) else { continue };
+            self.draw_window(fb, di, dx, dy, dw, dh);
+            for j in 0..self.windows.len() {
+                if j == di || self.windows[j].minimized {
+                    continue;
+                }
+                if self.windows[j].z <= self.windows[di].z {
+                    continue;
+                }
+                if let Some((jx, jy, jw, jh)) = self.rect_of(j) {
+                    if rects_overlap((dx, dy, dw, dh), (jx, jy, jw, jh)) {
+                        self.draw_window(fb, j, jx, jy, jw, jh);
+                    }
+                }
+            }
+        }
+        for w in self.windows.iter_mut() {
+            w.dirty = false;
+        }
+        // 3. Dok (dirty widget).
+        if self.dock_dirty {
+            self.draw_dock(fb);
+            self.dock_dirty = false;
+        }
+    }
 }
 
 /// Run the interactive Titanus desktop loop. Returns on ESC.
@@ -567,6 +699,7 @@ pub fn run() {
 
     // Scena + kursor (dirty: zapamiętaj tło pod kursorem).
     d.render_scene(&mut *fb);
+    d.clear_dirty();
     cursor_save(&*fb, cx, cy, &mut cur_buf);
     draw_cursor(&mut *fb, cx, cy);
 
@@ -615,11 +748,10 @@ pub fn run() {
             }
         }
 
-        // Pełne odświeżenie sceny, gdy coś się zmieniło.
-        let redrew = d.dirty;
-        if d.dirty {
-            d.render_scene(&mut *fb);
-            d.dirty = false;
+        // Selektywne odświeżenie (tylko brudne regiony).
+        let redrew = d.needs_redraw();
+        if redrew {
+            d.apply(&mut *fb);
         }
 
         // Przywróć kursor po ruchu albo po pełnym odświeżeniu.
