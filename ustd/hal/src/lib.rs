@@ -48,6 +48,7 @@ pub mod gate;
 pub mod heap;
 pub mod posix;
 pub mod sysnum;
+pub mod ui;
 
 #[cfg(test)]
 mod tests;

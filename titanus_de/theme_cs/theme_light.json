@@ -1,0 +1,19 @@
+{
+  "background": "#ECEFF4",
+  "gradient_left": "#FFFFFF",
+  "gradient_right": "#D8DEE9",
+  "window_bg": "#FFFFFF",
+  "window_border": "#B8C0CC",
+  "window_focus": "#2E7D32",
+  "title_bg": "#D8DEE9",
+  "title_text": "#2E3440",
+  "text": "#2E3440",
+  "dock_bg": "#E5E9F0",
+  "dock_entry": "#D8DEE9",
+  "dock_active": "#2E7D32",
+  "tray_bg": "#E5E9F0",
+  "tray_text": "#2E3440",
+  "font_size": 14,
+  "dock_width": 64,
+  "tray_margin": 8
+}

@@ -573,7 +573,7 @@ fn execute(line: &str) {
 
     match cmd {
         "help" => {
-            crate::println!("commands: help clear echo info ping ls cd mkdir format write read rm edit res demouserspace poweroff reboot");
+            crate::println!("commands: help clear echo info ping ls cd mkdir format write read rm edit res demouserspace allde titanus poweroff reboot");
             crate::println!("  write <name> <text...>  write a text file to disk");
             crate::println!("  read  <name>            read a file from disk");
             crate::println!("  rm    <name>            remove a file or empty folder");
@@ -585,6 +585,7 @@ fn execute(line: &str) {
             crate::println!("  ping  <IPv4>            send one ICMP Echo Request");
             crate::println!("  demouserspace           draw a sample graphical window (userspace demo)");
             crate::println!("  allde                   launch the all-de desktop (tiled windows)");
+            crate::println!("  titanus                  launch the Titanus DE (tiling + floating, dock + tray)");
             crate::println!("  poweroff                power off the machine");
             crate::println!("  reboot                  reboot the machine");
             crate::println!("  format                  format the disk (TFS)");
@@ -711,6 +712,11 @@ fn execute(line: &str) {
             // Launch the interactive desktop; it takes over input and returns
             // control to the terminal when the user presses ESC.
             crate::allde::run();
+        }
+        "titanus" => {
+            // Titanus DE: interaktywny pulpit (kafelki + pływające, dok po
+            // prawej). Przejmuje wejście; ESC wraca do terminala.
+            crate::titanus::run();
         }
         "reboot" => {
             crate::println!("rebooting...");

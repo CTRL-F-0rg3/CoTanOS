@@ -1,0 +1,15 @@
+[package]
+name = "tgs-pattern"
+description = "A SMPTE-style test card rendered to the ring-3 framebuffer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "tgs-pattern"
+path = "src/main.rs"
+
+[dependencies]
+tgs-rt = { workspace = true }
+tgs-gfx = { workspace = true }

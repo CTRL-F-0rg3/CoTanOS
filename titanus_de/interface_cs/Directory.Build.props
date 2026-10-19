@@ -1,0 +1,6 @@
+<Project>
+  <!-- Ta sama poprawka co w theme_cs: wyłącza zepsuty resolver workloadów. -->
+  <PropertyGroup>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+  </PropertyGroup>
+</Project>
