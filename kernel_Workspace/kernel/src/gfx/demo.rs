@@ -103,3 +103,81 @@ pub fn draw_desktop() -> bool {
 
     true
 }
+
+/// Miesza dwa kolory 0xRRGGBB w proporcji `t` (0..=255).
+fn lerp_color(a: u32, b: u32, t: u32) -> u32 {
+    let t = t.min(255);
+    let inv = 255 - t;
+    let r = (((a >> 16) & 0xFF) * inv + ((b >> 16) & 0xFF) * t) / 255;
+    let g = (((a >> 8) & 0xFF) * inv + ((b >> 8) & 0xFF) * t) / 255;
+    let bl = ((a & 0xFF) * inv + (b & 0xFF) * t) / 255;
+    0xFF00_0000 | (r << 16) | (g << 8) | bl
+}
+
+/// Draw the Titanus DE frame: wallpaper gradient, tiled + floating windows,
+/// a right-hand dock and a top-left system tray — the in-system preview of the
+/// `titanus` desktop (kafelkowo-pływający, dok po prawej, pasek w lewym górnym
+/// rogu). Returns `false` when the framebuffer is not available.
+pub fn draw_titanus() -> bool {
+    let fb: &mut Framebuffer = match try_fb() {
+        Some(f) => f,
+        None => return false,
+    };
+
+    let w = fb.width;
+    let h = fb.height;
+
+    // Tapeta: pionowy gradient.
+    for y in 0..h {
+        let t = (y as u32).saturating_mul(255) / (h.max(1) as u32);
+        let c = lerp_color(rgb(0x1A, 0x20, 0x2E), rgb(0x0D, 0x0E, 0x14), t);
+        for x in 0..w {
+            fb.set(x, y, c);
+        }
+    }
+
+    // Dok po prawej (szerokość doku).
+    let dock_w = 48usize;
+    let work_w = w.saturating_sub(dock_w);
+
+    // Okna kafelkowe: dwie równe kolumny (fokus na pierwszej).
+    let cols = 2usize;
+    let col_w = work_w / cols;
+    for (i, title) in ["Terminal", "Editor"].iter().enumerate() {
+        let x = i * col_w;
+        fill_rect(&mut *fb, x, 0, col_w - 4, h, rgb(0x1E, 0x22, 0x2C));
+        let border = if i == 0 { rgb(0x7C, 0xF0, 0x9C) } else { rgb(0x3A, 0x44, 0x5A) };
+        draw_rect(&mut *fb, x, 0, col_w - 4, h, border);
+        fill_rect(&mut *fb, x + 1, 1, col_w - 6, 20, rgb(0x2A, 0x35, 0x4A));
+        draw_text(&mut *fb, x + 6, 4, title, rgb(0xD0, 0xD8, 0xE0));
+    }
+
+    // Okno pływające (na wierzchu).
+    let fx = work_w / 4;
+    let fy = h / 4;
+    let fw = work_w / 2;
+    let fh = h / 2;
+    fill_rect(&mut *fb, fx, fy, fw, fh, rgb(0x2A, 0x35, 0x4A));
+    draw_rect(&mut *fb, fx, fy, fw, fh, rgb(0xD0, 0xD8, 0xE0));
+    fill_rect(&mut *fb, fx + 1, fy + 1, fw - 2, 20, rgb(0x3A, 0x44, 0x5A));
+    draw_text(&mut *fb, fx + 6, fy + 4, "System", rgb(0xD0, 0xD8, 0xE0));
+
+    // Dok po prawej: kafelki aplikacji.
+    let dx = w - dock_w;
+    fill_rect(&mut *fb, dx, 0, dock_w, h, rgb(0x16, 0x18, 0x20));
+    let side = dock_w - 16;
+    for (i, label) in ["T", "P", "E", "U", "S"].iter().enumerate() {
+        let ty = 16 + i * (side + 8);
+        fill_rect(&mut *fb, dx + 8, ty, side, side, rgb(0x2A, 0x35, 0x4A));
+        draw_text(&mut *fb, dx + 8 + side / 2 - 3, ty + side / 2 - 4, label, rgb(0xD0, 0xD8, 0xE0));
+    }
+
+    // Pasek systemowy w lewym górnym rogu (godzina, dźwięk, sieć).
+    fill_rect(&mut *fb, 8, 8, 200, 24, rgb(0x16, 0x18, 0x20));
+    draw_text(&mut *fb, 16, 16, "12:34  vol 70%  wifi", rgb(0xD0, 0xD8, 0xE0));
+
+    // Kursor.
+    fill_rect(&mut *fb, work_w / 2, h / 2, 8, 8, rgb(0xFF, 0xFF, 0xFF));
+
+    true
+}
