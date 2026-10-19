@@ -8,6 +8,7 @@ pub const SYS_IPC_SEND: u64 = 0x1010;
 pub const SYS_IPC_RECV: u64 = 0x1011;
 pub const SYS_KEY: u64     = 0x1040;
 pub const SYS_MOUSE: u64   = 0x1041;
+pub const SYS_MOUSE_RAW: u64 = 0x1042;
 pub const SYS_READDIR: u64 = 0x1025;
 pub const SYS_RUNCL: u64   = 0x1050;
 pub const SYS_UI_OPEN: u64 = 0x1060;
@@ -226,6 +227,17 @@ pub fn handle(world: usize, c: &mut tr::CpuCtx) {
                 } else {
                     u64::MAX
                 }
+            }
+        }
+        SYS_MOUSE_RAW => {
+            // One raw PS/2 mouse byte, straight from the controller. The
+            // packet decode (assembly, sign extension, buttons) is a
+            // *userspace* driver (`tgs-hal/src/mouse.rs`); this path only
+            // hands over bytes and does not call `editor/mouse.c`.
+            crate::ps2mouse::init_once();
+            match crate::ps2mouse::raw_byte() {
+                Some(b) => b as u64,
+                None => u64::MAX,
             }
         }
         SYS_READDIR => {

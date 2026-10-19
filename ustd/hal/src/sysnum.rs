@@ -77,6 +77,10 @@ pub const TGS_KEY: u64 = 0x1040;
 /// Poll the PS/2 mouse. Returns buttons in `rax`, sign-extended dx in `rdi`,
 /// dy in `rsi`; `rax == u64::MAX` means no packet was ready.
 pub const TGS_MOUSE: u64 = 0x1041;
+/// Read one raw PS/2 mouse byte. `rax` = the byte, or `u64::MAX` when the
+/// controller has no mouse data queued. The packet decode is done in
+/// userspace (`tgs_hal::mouse`), not here.
+pub const TGS_MOUSE_RAW: u64 = 0x1042;
 /// Map the framebuffer and the 8x8 font into the caller. See [`UI_FB_VA`].
 pub const TGS_UI_OPEN: u64 = 0x1060;
 
@@ -369,7 +373,7 @@ mod tests {
     /// so this test is the guard against that.
     const KERNEL_OWNED: &[u64] = &[
         YIELD, LOG, TICK, TGS_EXIT, TGS_SPAWN, TGS_GETPID, TGS_IPC_SEND,
-        TGS_IPC_RECV, TGS_KEY, TGS_UI_OPEN, TGS_CAP_QUERY, TGS_CAP_REQUEST,
+        TGS_IPC_RECV, TGS_KEY, TGS_MOUSE, TGS_MOUSE_RAW, TGS_UI_OPEN, TGS_CAP_QUERY, TGS_CAP_REQUEST,
         TGS_CAP_RELEASE, TGS_CAP_AUDIT,
     ];
 

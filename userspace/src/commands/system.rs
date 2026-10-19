@@ -393,3 +393,15 @@ pub fn true_cmd(_ctx: &mut Ctx<'_>, _args: &str) -> CmdResult {
 pub fn false_cmd(_ctx: &mut Ctx<'_>, _args: &str) -> CmdResult {
     CmdResult::fail(Vec::new())
 }
+
+/// `titanus` — launch the Titanus desktop (ring-3 ELF at /bin/titanus.elf).
+///
+/// Launching is a handoff: on success the kernel enters ring 3 and this shell
+/// never returns, so only a failure (missing ELF, world table full, ...)
+/// produces output.
+pub fn titanus(ctx: &mut Ctx<'_>, _args: &str) -> CmdResult {
+    match ctx.sys.spawn("/bin/titanus.elf") {
+        Ok(()) => CmdResult::ok(vec!["titanus: launched (ring 3)".to_string()]),
+        Err(e) => CmdResult::err(format!("titanus: {e}")),
+    }
+}

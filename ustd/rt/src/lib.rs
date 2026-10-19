@@ -293,6 +293,8 @@ pub extern "C" fn tgs_rt_start() -> ! {
 /// Called by the kernel at the ELF entry, once, on the stack it prepared.
 #[unsafe(naked)]
 #[cfg(target_arch = "x86_64")]
+#[no_mangle]
+#[link_section = ".text.entry"]
 pub unsafe extern "C" fn _start() -> ! {
     core::arch::naked_asm!(
         // The System V ABI wants `%rsp` 16-byte aligned *at* the call, which means
@@ -306,3 +308,13 @@ pub unsafe extern "C" fn _start() -> ! {
         "hlt",
     );
 }
+
+/// Keeps `tgs-libc`'s `#[no_mangle]` symbols in the link.
+///
+/// `-Zbuild-std` puts `tgs-libc` *before* `std` (see `build.sh`), so lld reaches
+/// it before anything has asked for `malloc`/`write`/`abort` and would drop the
+/// archive. Taking the address of `tgs_libc_anchor` here forces that member out,
+/// and `tgs_libc_anchor` itself address-takes every symbol `std` needs.
+#[cfg(target_arch = "x86_64")]
+#[used]
+static KEEP_LIBC: extern "C" fn() = tgs_libc::tgs_libc_anchor;

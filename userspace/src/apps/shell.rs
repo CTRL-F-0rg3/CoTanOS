@@ -63,6 +63,9 @@ pub trait Sys {
     fn uptime(&mut self) -> u64;
     /// How many CPUs.
     fn cpus(&mut self) -> u32;
+    /// Load a ring-3 ELF from the VFS and hand off to it. Only the error path
+    /// returns; success transfers control to the spawned world.
+    fn spawn(&mut self, path: &str) -> Result<(), String>;
 }
 
 /// A filesystem backed by a map, for tests and headless runs.
@@ -198,6 +201,9 @@ impl Sys for MockSys {
         } else {
             self.cpu_count
         }
+    }
+    fn spawn(&mut self, path: &str) -> Result<(), String> {
+        Err(format!("spawn not available in the mock kernel (wanted {path})"))
     }
 }
 

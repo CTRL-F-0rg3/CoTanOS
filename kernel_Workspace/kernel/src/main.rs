@@ -34,6 +34,8 @@ mod nic;
 #[cfg(target_arch = "x86_64")]
 mod pci;
 #[cfg(target_arch = "x86_64")]
+mod ps2mouse;
+#[cfg(target_arch = "x86_64")]
 mod terminal;
 
 #[cfg(target_arch = "x86_64")]

@@ -24,7 +24,7 @@ fi
 # writable root device and formats it with TFS on first use.
 if [ ! -f "$DATA_IMG" ]; then
     echo "[run] creating blank data disk: $DATA_IMG" >&2
-    dd if=/dev/zero of="$DATA_IMG" bs=1M count=8 status=none
+    dd if=/dev/zero of="$DATA_IMG" bs=1M count=64 status=none
 fi
 
 exec qemu-system-x86_64 \

@@ -46,6 +46,7 @@ pub mod errno;
 pub mod fd;
 pub mod gate;
 pub mod heap;
+pub mod mouse;
 pub mod posix;
 pub mod sysnum;
 pub mod ui;

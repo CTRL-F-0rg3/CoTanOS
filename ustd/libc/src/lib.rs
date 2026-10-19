@@ -70,3 +70,44 @@ pub mod time;
 
 #[cfg(feature = "sysroot")]
 pub use mem::System;
+
+/// Address-take every `#[no_mangle]` symbol `std` links against, so lld keeps
+/// them.
+///
+/// `-Zbuild-std` places this crate's rlib *before* the freshly built `std` (see
+/// `build.sh`). A linker only pulls a member out of an archive when that member
+/// resolves a symbol that is undefined at the point the archive is seen, so when
+/// lld reaches this crate nothing has asked for `malloc`/`write`/`abort` yet and
+/// it discards the members — and then `std` asks for them and finds nothing.
+///
+/// `tgs-rt` references this one function (it is what defines `_start`), and the
+/// address-takes below force every member back out of the archive whatever order
+/// they arrive in.
+#[cfg(feature = "sysroot")]
+#[no_mangle]
+pub extern "C" fn tgs_libc_anchor() {
+    let keep = [
+        mem::malloc as usize,
+        mem::calloc as usize,
+        mem::realloc as usize,
+        mem::free as usize,
+        mem::posix_memalign as usize,
+        process::abort as usize,
+        process::syscall as usize,
+        fs::write as usize,
+        fs::writev as usize,
+        fs::read as usize,
+        fs::close as usize,
+        fs::getcwd as usize,
+        time::clock_gettime as usize,
+        errno::__errno_location as usize,
+        errno::__xpg_strerror_r as usize,
+        thread::pthread_key_create as usize,
+        thread::pthread_key_delete as usize,
+        thread::pthread_getspecific as usize,
+        thread::pthread_setspecific as usize,
+        cxa::_Unwind_Backtrace as usize,
+        cxa::_Unwind_GetIP as usize,
+    ];
+    core::hint::black_box(keep);
+}

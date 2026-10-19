@@ -3,12 +3,12 @@ use crate::trampoline_rings as tr;
 
 const USER_STACK_TOP: u64 = 0x7FFF_0000_0000;
 
-pub fn spawn_init() -> Result<(), &'static str> {
+pub fn spawn_elf(path: &str) -> Result<(), &'static str> {
     let mut buf = [0u8; 64 * 1024];
 
     let n = crate::fs::vfs::root()
-        .and_then(|fs| fs.read_path("/bin/init.elf", &mut buf))
-        .ok_or("init.elf not found in fs")?;
+        .and_then(|fs| fs.read_path(path, &mut buf))
+        .ok_or("elf not found in fs")?;
 
     let loaded = elf::load(&buf[..n])?;
 
@@ -30,6 +30,12 @@ pub fn spawn_init() -> Result<(), &'static str> {
                   USER_STACK_TOP,
                   0)
         .ok_or("world table full")?;
+
+    Ok(())
+}
+
+pub fn spawn_init() -> Result<(), &'static str> {
+    spawn_elf("/bin/init.elf")?;
 
     extern "C" { fn kprintf(fmt: *const u8, ...); }
     unsafe {

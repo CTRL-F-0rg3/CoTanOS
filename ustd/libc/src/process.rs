@@ -67,6 +67,18 @@ pub extern "C" fn gettid() -> pid_t {
     Posix::global().gettid().unwrap_or(0) as pid_t
 }
 
+/// `long syscall(long number, ...)` — the generic Linux syscall entry.
+///
+/// `std` reaches for this directly for `SYS_gettid` and the futex family rather
+/// than going through the named functions. TrangorgeOS has no Linux syscall
+/// table — programs talk to the kernel through `tgs_hal::gate` — so there is no
+/// number to dispatch. `ENOSYS` is the honest answer and lets `std`'s `gettid`
+/// fall back to 0, which is the correct single-task answer anyway.
+#[no_mangle]
+pub extern "C" fn syscall(_number: c_long) -> c_long {
+    shim::fail(tgs_hal::errno::ENOSYS) as c_long
+}
+
 /// `pid_t getppid(void)` — the TrangorgeOS process table has no parent link yet.
 #[no_mangle]
 pub extern "C" fn getppid() -> pid_t {

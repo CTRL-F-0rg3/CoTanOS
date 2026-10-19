@@ -152,6 +152,14 @@ impl Sys for KernelSys {
     fn cpus(&mut self) -> u32 {
         crate::cpu::total_cpus()
     }
+
+    fn spawn(&mut self, path: &str) -> Result<(), String> {
+        // Entering ring 3 swaps the IDT (`trampoline_rings::init`) and hands
+        // the machine to the hypercall loop, so this returns only on failure.
+        crate::trampoline_rings::init();
+        crate::userspace::process::spawn::spawn_elf(path).map_err(|e| e.to_string())?;
+        crate::trampoline_rings::start()
+    }
 }
 
 impl Fs for DiskFs {
