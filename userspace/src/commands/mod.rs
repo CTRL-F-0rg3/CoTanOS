@@ -354,6 +354,7 @@ pub fn registry() -> Vec<Command> {
         Command { name: "false", about: "false                    fail", run: system::false_cmd },
         // Desktop session.
         Command { name: "i3dw", about: "i3dw                     launch the Plasma-style desktop", run: desktop::i3dw },
+        Command { name: "titanus", about: "titanus                  launch the Titanus DE (tiling + floating)", run: desktop::titanus },
 
     ]
 }

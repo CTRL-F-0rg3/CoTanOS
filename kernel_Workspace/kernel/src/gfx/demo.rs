@@ -181,3 +181,14 @@ pub fn draw_titanus() -> bool {
 
     true
 }
+
+/// C ABI hook: the linked userspace shell launches the Titanus DE preview.
+/// Draws the frame and blocks until a key is pressed, then returns control.
+#[no_mangle]
+pub extern "C" fn titanus_run() {
+    if draw_titanus() {
+        while crate::terminal::pop_char().is_none() {
+            x86_64::instructions::hlt();
+        }
+    }
+}

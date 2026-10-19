@@ -15,6 +15,7 @@ use super::{CmdResult, Ctx};
 // mouse and keyboard — the same way `allde` does, but Plasma-style.
 extern "C" {
     fn i3dw_run();
+    fn titanus_run();
 }
 
 /// `i3dw` — launch the KDE-Plasma-like floating desktop.
@@ -26,5 +27,16 @@ pub fn i3dw(_ctx: &mut Ctx<'_>, _args: &str) -> CmdResult {
         "i3dw — powrót z pulpitu (ESC)".to_string(),
         "klawisze: strzałki=kursor F4=klik Tab=fokus".to_string(),
         "         F1=minimalizuj F2=zamknij F3=nowe okno".to_string(),
+    ])
+}
+
+/// `titanus` — launch the Titanus DE (kafelkowo-pływający, dok + pasek).
+pub fn titanus(_ctx: &mut Ctx<'_>, _args: &str) -> CmdResult {
+    // Rysuje pulpit Titanus DE i blokuje do naciśnięcia klawisza, potem wraca.
+    unsafe { titanus_run(); }
+
+    CmdResult::ok(vec![
+        "titanus — powrót z pulpitu".to_string(),
+        "klawisz powraca do powłoki".to_string(),
     ])
 }
