@@ -1,0 +1,9 @@
+<Project>
+  <!-- SDK .NET 10 na tym systemie ma zainstalowane manifesty workloadów
+       (android/ios/maui/emscripten/mono.toolchain) bez samych workloadów, co
+       psuje `dotnet run`. Ten prosty projekt konsolowy nie potrzebuje żadnego
+       workloade'u, więc wyłączamy resolver. -->
+  <PropertyGroup>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+  </PropertyGroup>
+</Project>

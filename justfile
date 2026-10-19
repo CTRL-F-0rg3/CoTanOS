@@ -98,6 +98,42 @@ demouserspace: uspace-libs
 allde:
     cargo run --manifest-path allde/Cargo.toml
 
+# Regenerate the theme JSON from the C# appearance layer (theme_cs).
+titanus-theme:
+    cd titanus_de/theme_cs && dotnet run -- theme.json
+    cd titanus_de/theme_cs && dotnet run -- theme_light.json --light
+
+# Build + test the Titanus DE (rdzeń Rust + logika C++ przez build.rs).
+titanus-cpp:
+    g++ -std=c++17 -Wall -Wextra titanus_de/src/logic/de_logic.cpp titanus_de/src/logic/de_logic_test.cpp -o /tmp/titanus_cpp_test
+    /tmp/titanus_cpp_test
+
+# Pełny pipeline: wygląd C# -> logika C++ -> rdzeń Rust.
+titanus-test: titanus-theme titanus-cpp
+    cargo test --manifest-path titanus_de/Cargo.toml
+
+# Render a Titanus DE demo frame -> writes titanus_frame.ppm.
+titanus: titanus-theme
+    cargo run --manifest-path titanus_de/Cargo.toml
+
+# Build the Rust core as a shared library (C ABI: libtitanus_de.so).
+titanus-core:
+    cargo build --manifest-path titanus_de/Cargo.toml
+
+# Run the C# interface (dotnet) driving the DE via P/Invoke.
+titanus-interface: titanus-core titanus-theme
+    cd titanus_de/interface_cs && LD_LIBRARY_PATH=../target/debug dotnet run -- ../theme_cs/theme.json
+
+# Compile the C# interface to a native ELF (NativeAOT) and run it.
+# To jest krok "host kompiluje C# -> natywny binarny" do uruchomienia na OS.
+titanus-aot: titanus-core titanus-theme
+    cd titanus_de/interface_cs && dotnet publish -r linux-x64 -p:PublishAot=true -p:StripSymbols=true -o publish_aot
+    cd titanus_de/interface_cs && LD_LIBRARY_PATH=../target/debug ./publish_aot/titanus-interface ../theme_cs/theme.json
+
+# Fully static C# interface (musl, static-pie) — for the OS's ELF loader.
+titanus-static: titanus-core titanus-theme
+    cd titanus_de/interface_cs && dotnet publish -r linux-musl-x64 -p:PublishAot=true -p:StaticExecutable=true -p:StripSymbols=true -p:LinkerFlavor=lld -o publish_static
+
 # Build the userspace standard library (ustd) — a real Rust `std` for ring 3.
 # The syscall layer, the C ABI and `_start` come from ustd/; the `std` itself is
 # upstream, built by the script because there is no prebuilt one for the target.

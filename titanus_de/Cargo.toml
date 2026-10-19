@@ -1,0 +1,34 @@
+[package]
+name = "titanus-de"
+version = "0.1.0"
+edition = "2021"
+description = "Titanus DE — kafelkowo-pływające środowisko graficzne userspace TrangorgeOS (rdzeń w Rust)."
+
+[lib]
+name = "titanus_de"
+path = "src/lib.rs"
+# `cdylib` -> libtitanus_de.so (P/Invoke z C#/C), `staticlib` -> libtitanus_de.a
+# (statyczne linkowanie do binarnego NativeAOT), `rlib` dla testów i binarnego.
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "titanus"
+path = "src/bin/titanus.rs"
+
+[dependencies]
+# `uspace` to warstwa graficzna i model uprawnień userspace: wypełnienia,
+# obrysy, tekst z atlasu bitmapowego oraz pobieranie framebuffera z jądra.
+uspace = { path = "../uspace" }
+# Dekodowanie tapet PNG. `png` i cała rodzina dekompresji (fdeflate, flate2,
+# miniz_oxide, zlib-rs) są już w cache cargo, więc build działa offline.
+png = "0.17"
+# Wczytywanie motywu generowanego przez C# (theme_cs -> theme.json).
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[build-dependencies]
+# Kompilacja logiki C++ (src/logic/de_logic.cpp) przez build.rs.
+cc = "1.0"
+
+[profile.release]
+opt-level = 2
