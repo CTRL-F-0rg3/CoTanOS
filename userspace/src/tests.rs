@@ -329,4 +329,160 @@ mod tests {
             "the old password must stop working"
         );
     }
+
+    /// The management commands that only read system state report the mock.
+    #[test]
+    fn machine_commands_report_system_state() {
+        let mut fs = MemoryFs::new();
+        let mut sys = MockSys::default();
+        let mut accounts = Accounts::with_root();
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        sh.run("hostname");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "TrangorgeOS");
+        sh.run("nproc");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "1");
+        sh.run("arch");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "x86_64");
+        sh.run("env");
+        assert!(sh.terminal().history().join("\n").contains("user=root"));
+    }
+
+    /// Pure-math commands do not touch the filesystem.
+    #[test]
+    fn factor_cal_and_tr_are_pure() {
+        let mut fs = MemoryFs::new();
+        let mut sys = MockSys::default();
+        let mut accounts = Accounts::with_root();
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        sh.run("factor 12");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "12: 2 2 3");
+        sh.run("cal 1 2025");
+        assert!(sh.terminal().history().join("\n").contains("January 2025"));
+        sh.run("tr abc xyz banana");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "yxnxnx");
+    }
+
+    #[test]
+    fn fold_wraps_and_yes_repeats() {
+        let mut fs = MemoryFs::new();
+        let mut sys = MockSys::default();
+        let mut accounts = Accounts::with_root();
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        sh.run("fold -w 3 abcdef");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "def");
+        sh.run("yes ok");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "ok");
+    }
+
+    #[test]
+    fn du_stat_and_cksum_report_file_sizes() {
+        let mut fs = MemoryFs::new();
+        let mut sys = MockSys::default();
+        let mut accounts = Accounts::with_root();
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        let cwd = sh.session().cwd.clone();
+        drop(sh);
+        fs.write_file(&format!("{cwd}/notes.txt"), b"hello");
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        sh.run("stat notes.txt");
+        assert!(sh.terminal().history().join("\n").contains("file, 5 bytes"));
+        sh.run("cksum notes.txt");
+        let ck = sh.terminal().history().last().copied().unwrap_or("");
+        assert!(ck.starts_with("532 5 "), "{ck}");
+        sh.run("du");
+        let du = sh.terminal().history().last().copied().unwrap_or("");
+        assert!(du.starts_with("5\t"), "{du}");
+    }
+
+    #[test]
+    fn cmp_detects_a_difference() {
+        let mut fs = MemoryFs::new();
+        let mut sys = MockSys::default();
+        let mut accounts = Accounts::with_root();
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        let cwd = sh.session().cwd.clone();
+        drop(sh);
+        fs.write_file(&format!("{cwd}/a"), b"abc");
+        fs.write_file(&format!("{cwd}/b"), b"axc");
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        sh.run("cmp a b");
+        assert!(sh.terminal().history().join("\n").contains("differ"));
+    }
+
+    #[test]
+    fn shred_removes_the_file() {
+        let mut fs = MemoryFs::new();
+        let mut sys = MockSys::default();
+        let mut accounts = Accounts::with_root();
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        let cwd = sh.session().cwd.clone();
+        drop(sh);
+        fs.write_file(&format!("{cwd}/secret"), b"top secret data");
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        sh.run("shred secret");
+        sh.run("cat secret");
+        assert!(sh.terminal().history().join("\n").contains("no such file"));
+    }
+
+    #[test]
+    fn truncate_resizes_and_tac_nl_reorder() {
+        let mut fs = MemoryFs::new();
+        let mut sys = MockSys::default();
+        let mut accounts = Accounts::with_root();
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        let cwd = sh.session().cwd.clone();
+        drop(sh);
+        fs.write_file(&format!("{cwd}/f"), b"abcdef");
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        sh.run("truncate f 3");
+        sh.run("cat f");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "abc");
+        drop(sh);
+        fs.write_file(&format!("{cwd}/g"), b"one\ntwo\n");
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        sh.run("tac g");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "one");
+        sh.run("nl g");
+        assert!(sh.terminal().history().join("\n").contains("     1\tone"));
+    }
+
+    #[test]
+    fn hexdump_and_strings_read_bytes() {
+        let mut fs = MemoryFs::new();
+        let mut sys = MockSys::default();
+        let mut accounts = Accounts::with_root();
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        let cwd = sh.session().cwd.clone();
+        drop(sh);
+        fs.write_file(&format!("{cwd}/bin"), b"\x00ABhello\x00\x00");
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        sh.run("hexdump bin");
+        assert!(sh.terminal().history().join("\n").contains("|.ABhello..|"));
+        sh.run("strings bin");
+        assert!(sh.terminal().history().join("\n").contains("ABhello"));
+    }
+
+    #[test]
+    fn rmdir_ln_paste_and_comm_work() {
+        let mut fs = MemoryFs::new();
+        let mut sys = MockSys::default();
+        let mut accounts = Accounts::with_root();
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        let cwd = sh.session().cwd.clone();
+        drop(sh);
+        fs.mkdir(&format!("{cwd}/empty"));
+        fs.write_file(&format!("{cwd}/a.txt"), b"alpha\n");
+        fs.write_file(&format!("{cwd}/b.txt"), b"beta\n");
+        let mut sh = shell_over(&mut fs, &mut sys, &mut accounts);
+        sh.run("rmdir empty");
+        sh.run("rmdir empty");
+        assert!(sh.terminal().history().join("\n").contains("no such directory"));
+        sh.run("ln a.txt link.txt");
+        sh.run("cat link.txt");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "alpha");
+        sh.run("paste a.txt b.txt");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "alpha\tbeta");
+        sh.run("comm a.txt b.txt");
+        assert_eq!(sh.terminal().history().last().copied().unwrap_or(""), "\tbeta");
+    }
 }
