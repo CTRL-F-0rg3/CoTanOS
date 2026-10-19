@@ -708,16 +708,6 @@ fn execute(line: &str) {
                 false => crate::println!("demouserspace: brak framebuffera (gfx nieaktywne)"),
             }
         }
-        "allde" => {
-            // Launch the interactive desktop; it takes over input and returns
-            // control to the terminal when the user presses ESC.
-            crate::allde::run();
-        }
-        "titanus" => {
-            // Titanus DE: interaktywny pulpit (kafelki + pływające, dok po
-            // prawej). Przejmuje wejście; ESC wraca do terminala.
-            crate::titanus::run();
-        }
         "reboot" => {
             crate::println!("rebooting...");
             crate::cpu::reboot();

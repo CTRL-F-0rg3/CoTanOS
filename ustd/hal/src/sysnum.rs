@@ -74,6 +74,9 @@ pub const TGS_CAP_RELEASE: u64 = 0x1072;
 pub const TGS_CAP_AUDIT: u64 = 0x1073;
 /// Poll one key from the USB HID keyboard driver. `0` means "nothing".
 pub const TGS_KEY: u64 = 0x1040;
+/// Poll the PS/2 mouse. Returns buttons in `rax`, sign-extended dx in `rdi`,
+/// dy in `rsi`; `rax == u64::MAX` means no packet was ready.
+pub const TGS_MOUSE: u64 = 0x1041;
 /// Map the framebuffer and the 8x8 font into the caller. See [`UI_FB_VA`].
 pub const TGS_UI_OPEN: u64 = 0x1060;
 

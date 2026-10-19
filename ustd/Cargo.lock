@@ -41,6 +41,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tgs-mandel"
+version = "0.1.0"
+dependencies = [
+ "tgs-rt",
+]
+
+[[package]]
 name = "tgs-paint"
 version = "0.1.0"
 dependencies = [
@@ -72,4 +79,13 @@ version = "0.1.0"
 dependencies = [
  "tgs-hal",
  "tgs-libc",
+]
+
+[[package]]
+name = "tgs-titanus"
+version = "0.1.0"
+dependencies = [
+ "tgs-gfx",
+ "tgs-hal",
+ "tgs-rt",
 ]

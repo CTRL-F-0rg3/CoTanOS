@@ -1,0 +1,16 @@
+[package]
+name = "tgs-titanus"
+description = "The Titanus interactive desktop, running in userspace (ring 3) — not the kernel."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "titanus"
+path = "src/main.rs"
+
+[dependencies]
+tgs-rt = { workspace = true }
+tgs-gfx = { workspace = true }
+tgs-hal = { workspace = true }

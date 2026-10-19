@@ -7,6 +7,7 @@ pub const SYS_GETPID: u64  = 0x1002;
 pub const SYS_IPC_SEND: u64 = 0x1010;
 pub const SYS_IPC_RECV: u64 = 0x1011;
 pub const SYS_KEY: u64     = 0x1040;
+pub const SYS_MOUSE: u64   = 0x1041;
 pub const SYS_READDIR: u64 = 0x1025;
 pub const SYS_RUNCL: u64   = 0x1050;
 pub const SYS_UI_OPEN: u64 = 0x1060;
@@ -192,6 +193,39 @@ pub fn handle(world: usize, c: &mut tr::CpuCtx) {
             match crate::drivers::usb::class::hid::keyboard::take_char() {
                 Some(ch) => ch as u64,
                 None => 0,
+            }
+        }
+        SYS_MOUSE => {
+            // Poll the PS/2 mouse driver. `mouse_init` is idempotent-ish but
+            // resets the device, so it is run once. Returns the button mask in
+            // `rax` and sign-extended dx/dy in `rdi`/`rsi`; `rax == u64::MAX`
+            // means no packet was ready.
+            extern "C" {
+                fn mouse_init();
+                fn mouse_poll(
+                    dx: *mut i32,
+                    dy: *mut i32,
+                    dz: *mut i32,
+                    buttons: *mut i32,
+                ) -> i32;
+            }
+
+            static mut MOUSE_READY: bool = false;
+
+            unsafe {
+                if !MOUSE_READY {
+                    mouse_init();
+                    MOUSE_READY = true;
+                }
+
+                let (mut dx, mut dy, mut dz, mut btn) = (0i32, 0i32, 0i32, 0i32);
+                if mouse_poll(&mut dx, &mut dy, &mut dz, &mut btn) == 1 {
+                    c.rdi = (dx as i64) as u64;
+                    c.rsi = (dy as i64) as u64;
+                    btn as u64
+                } else {
+                    u64::MAX
+                }
             }
         }
         SYS_READDIR => {

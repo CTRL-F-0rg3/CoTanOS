@@ -31,7 +31,6 @@ use crate::login::{Account, Accounts, LoginError, Session};
 pub mod accounts;
 pub mod admin;
 pub mod cpp;
-pub mod desktop;
 pub mod files;
 pub mod system;
 pub mod text;
@@ -354,9 +353,6 @@ pub fn registry() -> Vec<Command> {
         Command { name: "[", about: "[ ... ]                  the same test, shell spelling", run: system::test },
         Command { name: "true", about: "true                     succeed", run: system::true_cmd },
         Command { name: "false", about: "false                    fail", run: system::false_cmd },
-        // Desktop session.
-        Command { name: "i3dw", about: "i3dw                     launch the Plasma-style desktop", run: desktop::i3dw },
-        Command { name: "titanus", about: "titanus                  launch the Titanus DE (tiling + floating)", run: desktop::titanus },
         // Management: the machine, the session, and file utilities.
         Command { name: "hostname", about: "hostname                 machine name", run: admin::hostname },
         Command { name: "nproc", about: "nproc                    number of CPUs", run: admin::nproc },
