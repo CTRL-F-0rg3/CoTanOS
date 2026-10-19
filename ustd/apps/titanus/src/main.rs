@@ -12,6 +12,9 @@
 //! * a dirty-region compositor: only damaged rectangles are recomposited
 //! * click-to-focus, drag-to-move (floating), `Esc` exits
 
+// Link the `_start` entry point and `main` shim (not `use`d below).
+extern crate tgs_rt;
+
 use tgs_gfx::{open_canvas, rgb, Canvas};
 use tgs_hal::mouse::Mouse;
 use tgs_hal::ui::key_poll;

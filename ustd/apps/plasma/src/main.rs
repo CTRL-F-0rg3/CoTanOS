@@ -4,6 +4,9 @@
 //! through a rainbow hue wheel. It never needs `libm`, so it links on a
 //! freestanding target where `sin`/`cos` are stubs.
 
+// Link the `_start` entry point and `main` shim (not `use`d below).
+extern crate tgs_rt;
+
 use tgs_gfx::{hue, idle, open_canvas, Color};
 
 fn main() {

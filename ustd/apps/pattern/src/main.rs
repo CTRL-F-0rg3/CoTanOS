@@ -3,6 +3,9 @@
 //! Static: it draws once, then parks in the kernel-yielding idle loop so the
 //! image stays on screen and the world stays schedulable.
 
+// Link the `_start` entry point and `main` shim (not `use`d below).
+extern crate tgs_rt;
+
 use tgs_gfx::{draw_rect, draw_text, fill_rect, idle, open_canvas, rgb, Color};
 
 fn main() {

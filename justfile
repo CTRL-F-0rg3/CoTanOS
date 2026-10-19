@@ -86,8 +86,8 @@ i3dw:
 # `just run` boots a system where they are present as /bin/<name>.elf.
 ring3:
     bash ./ustd/build.sh
-    rm -f kernel-bin/data.img
-    cargo run --manifest-path tools/tfsinject/Cargo.toml -- kernel-bin/data.img ustd/target/x86_64-trangorge-uspace/debug
+    rm -f kernel_Workspace/kernel-bin/data.img
+    cargo run --manifest-path tools/tfsinject/Cargo.toml -- kernel_Workspace/kernel-bin/data.img ustd/target/x86_64-trangorge-uspace/debug
 
 # Build the userspace workspace (nested system + graphical-window demo).
 uspace-libs:

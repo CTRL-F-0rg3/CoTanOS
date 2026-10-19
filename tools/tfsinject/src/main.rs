@@ -75,8 +75,8 @@ impl Tfs {
             .unwrap();
         let len = f.metadata().unwrap().len();
         let total = if len < (2 * BLOCK) as u64 {
-            f.set_len(64 * 1024 * 1024).unwrap();
-            (64 * 1024 * 1024 / BLOCK) as u32
+            f.set_len(128 * 1024 * 1024).unwrap();
+            (128 * 1024 * 1024 / BLOCK) as u32
         } else {
             (len / BLOCK as u64) as u32
         };

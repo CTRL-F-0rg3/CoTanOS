@@ -26,7 +26,7 @@ use core::cell::UnsafeCell;
 use tgs_hal::errno;
 
 use crate::shim;
-use crate::types::{c_int, c_uint, c_void};
+use crate::types::{c_char, c_int, c_uint, c_void, size_t};
 
 /// `unsigned int`
 pub type pthread_t = c_uint;
@@ -289,4 +289,55 @@ pub static __libc_single_threaded: c_int = 1;
 #[doc(hidden)]
 pub fn __keep_shim_linked() -> c_int {
     shim::fail(errno::ENOSYS) as c_int
+}
+
+/// `int pthread_attr_getguardsize(const pthread_attr_t *attr, size_t *guardsize)`
+///
+/// There are no threads, so a guard is always zero bytes. Reported honestly
+/// rather than as an error, so `std` does not treat a missing guard as a failure.
+#[no_mangle]
+pub extern "C" fn pthread_attr_getguardsize(_attr: *const c_void, guardsize: *mut size_t) -> c_int {
+    if !guardsize.is_null() {
+        // SAFETY: the caller passed a writable `size_t`, per the contract.
+        unsafe { *guardsize = 0 };
+    }
+    0
+}
+
+/// `int pthread_attr_getstack(const pthread_attr_t *attr, void **stackaddr, size_t *stacksize)`
+///
+/// No thread stack to report; a null address and zero size is the honest answer.
+#[no_mangle]
+pub extern "C" fn pthread_attr_getstack(
+    _attr: *const c_void,
+    stackaddr: *mut *mut c_void,
+    stacksize: *mut size_t,
+) -> c_int {
+    if !stackaddr.is_null() {
+        // SAFETY: the caller passed a writable pointer, per the contract.
+        unsafe { *stackaddr = core::ptr::null_mut() };
+    }
+    if !stacksize.is_null() {
+        // SAFETY: the caller passed a writable `size_t`, per the contract.
+        unsafe { *stacksize = 0 };
+    }
+    0
+}
+
+/// `int pthread_detach(pthread_t thread)` — nothing to detach.
+#[no_mangle]
+pub extern "C" fn pthread_detach(_thread: pthread_t) -> c_int {
+    0
+}
+
+/// `int pthread_getattr_np(pthread_t thread, pthread_attr_t *attr)` — no attr to read.
+#[no_mangle]
+pub extern "C" fn pthread_getattr_np(_thread: pthread_t, _attr: *mut c_void) -> c_int {
+    0
+}
+
+/// `int pthread_setname_np(pthread_t thread, const char *name)` — accepted and dropped.
+#[no_mangle]
+pub extern "C" fn pthread_setname_np(_thread: pthread_t, _name: *const c_char) -> c_int {
+    0
 }

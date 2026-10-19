@@ -4,6 +4,9 @@
 //! a paint program would. The hue cycles with each bounce step, giving the
 //! scribble a rainbow gradient.
 
+// Link the `_start` entry point and `main` shim (not `use`d below).
+extern crate tgs_rt;
+
 use tgs_gfx::{draw_circle, draw_text, fill_circle, fill_rect, hue, idle, open_canvas, rgb};
 
 fn main() {
