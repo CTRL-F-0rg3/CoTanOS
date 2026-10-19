@@ -29,6 +29,8 @@ use crate::apps::shell::{Fs, Sys};
 use crate::login::{Account, Accounts, LoginError, Session};
 
 pub mod accounts;
+pub mod admin;
+pub mod cpp;
 pub mod desktop;
 pub mod files;
 pub mod system;
@@ -307,7 +309,7 @@ pub struct Command {
 /// — rather than alphabetically, because `help` is read by a person deciding
 /// what to type next, not scanned for a name.
 pub fn registry() -> Vec<Command> {
-    use crate::commands::{accounts, files, system, text};
+    use crate::commands::{accounts, admin, cpp, files, system, text};
 
     vec![
         // Files.
@@ -355,6 +357,37 @@ pub fn registry() -> Vec<Command> {
         // Desktop session.
         Command { name: "i3dw", about: "i3dw                     launch the Plasma-style desktop", run: desktop::i3dw },
         Command { name: "titanus", about: "titanus                  launch the Titanus DE (tiling + floating)", run: desktop::titanus },
+        // Management: the machine, the session, and file utilities.
+        Command { name: "hostname", about: "hostname                 machine name", run: admin::hostname },
+        Command { name: "nproc", about: "nproc                    number of CPUs", run: admin::nproc },
+        Command { name: "arch", about: "arch                     machine architecture", run: admin::arch },
+        Command { name: "env", about: "env                      session environment", run: admin::env },
+        Command { name: "du", about: "du [path]                disk usage of a tree", run: admin::du },
+        Command { name: "stat", about: "stat <path>              file or directory info", run: admin::stat },
+        Command { name: "cmp", about: "cmp <a> <b>              compare two files", run: admin::cmp },
+        Command { name: "shred", about: "shred <file>             zero and remove a file", run: admin::shred },
+        Command { name: "truncate", about: "truncate <file> <n>      set file size", run: admin::truncate },
+        Command { name: "cksum", about: "cksum <file>             byte-sum checksum", run: admin::cksum },
+        Command { name: "hexdump", about: "hexdump <file>           hex + ASCII dump", run: admin::hexdump },
+        Command { name: "strings", about: "strings <file>           printable strings", run: admin::strings },
+        Command { name: "tac", about: "tac <file>               lines in reverse", run: admin::tac },
+        Command { name: "nl", about: "nl <file>                number lines", run: admin::nl },
+        Command { name: "rmdir", about: "rmdir <dir>              remove an empty directory", run: admin::rmdir },
+        Command { name: "ln", about: "ln <src> <dst>           link (copy) a file", run: admin::ln },
+        Command { name: "fold", about: "fold [-w N] <text>       wrap text", run: admin::fold },
+        Command { name: "yes", about: "yes [text]               repeat text (capped)", run: admin::yes },
+        Command { name: "factor", about: "factor <n>...            prime factorization", run: admin::factor },
+        Command { name: "cal", about: "cal [month [year]]       a month calendar", run: admin::cal },
+        Command { name: "paste", about: "paste <a> <b>            join lines of two files", run: admin::paste },
+        Command { name: "comm", about: "comm <a> <b>             compare sorted files", run: admin::comm },
+        Command { name: "tr", about: "tr <s1> <s2> <text>      translate characters", run: admin::tr },
+        // C++ applications (compiled from apps/cpp by build.rs, freestanding).
+        Command { name: "calc", about: "calc <expr>              C++ integer calculator", run: cpp::calc },
+        Command { name: "temp", about: "temp <value><C|F|K>      C++ temperature converter", run: cpp::temp },
+        Command { name: "stats", about: "stats <n>...             C++ min/max/sum/avg", run: cpp::stats },
+        Command { name: "bmi", about: "bmi <kg> <cm>            C++ body mass index", run: cpp::bmi },
+        Command { name: "rand", about: "rand [count] [max]       C++ LCG random numbers", run: cpp::rand },
+        Command { name: "tui", about: "tui                      C++ ASCII dashboard (TUI)", run: cpp::tui },
 
     ]
 }
