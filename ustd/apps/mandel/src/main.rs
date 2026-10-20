@@ -5,6 +5,9 @@
 //! ring 3. This is the "more advanced" counterpart to the freestanding
 //! `apps/rust/hello`.
 
+// Link the `_start` entry point and `main` shim (not `use`d below).
+extern crate tgs_rt;
+
 use std::time::Instant;
 
 const WIDTH: usize = 80;

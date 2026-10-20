@@ -72,8 +72,9 @@ kernel: drivers
     cd kernel_Workspace/kernel-bin && cargo bootimage
 
 # Run the kernel in QEMU (graphical window, serial on stdout). Also builds the
-# userspace workspace and the i3dw desktop so the whole system compiles together.
-run: kernel uspace-libs i3dw
+# userspace workspace, the i3dw desktop and injects the ring-3 ELFs into the
+# data image, so the whole system compiles and boots together.
+run: kernel uspace-libs i3dw ring3
     cd kernel_Workspace/kernel-bin && ./run.sh
 
 # Build the i3dw desktop environment (host-side renderer + tests).
@@ -81,10 +82,12 @@ i3dw:
     cargo test --manifest-path i3dw/Cargo.toml
 
 # Build the ring-3 init (/bin/init.elf) plus the graphical apps against the real
-# Rust std. Copy the results into the TFS data image so `just run` can boot them.
+# Rust std, then inject them into the TFS data image (kernel-bin/data.img) so
+# `just run` boots a system where they are present as /bin/<name>.elf.
 ring3:
     bash ./ustd/build.sh
-    @echo "[just] ring-3 binaries built (copy tgs-init -> /bin/init.elf, the tgs-* apps -> /bin/<name>.elf)"
+    rm -f kernel_Workspace/kernel-bin/data.img
+    cargo run --manifest-path tools/tfsinject/Cargo.toml -- kernel_Workspace/kernel-bin/data.img ustd/target/x86_64-trangorge-uspace/debug
 
 # Build the userspace workspace (nested system + graphical-window demo).
 uspace-libs:

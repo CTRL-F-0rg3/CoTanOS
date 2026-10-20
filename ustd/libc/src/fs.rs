@@ -14,7 +14,7 @@ use tgs_hal::posix::{PollFd as HalPollFd, Posix, Stat as HalStat};
 use tgs_hal::sysnum;
 
 use crate::shim;
-use crate::types::{c_char, c_int, c_long, c_uint, mode_t, off_t, size_t, ssize_t};
+use crate::types::{c_char, c_int, c_long, c_uint, c_void, mode_t, off_t, size_t, ssize_t};
 
 /// `AT_FDCWD`, re-exported so a caller does not have to hardcode `-100`.
 pub const AT_FDCWD: c_int = sysnum::AT_FDCWD;
@@ -393,6 +393,10 @@ pub extern "C" fn unlink(pathname: *const c_char) -> c_int {
 #[no_mangle]
 pub extern "C" fn unlinkat(dirfd: c_int, pathname: *const c_char, flags: c_int) -> c_int {
     // SAFETY: as `mkdir`.
+    let r = unsafe { Posix::global().unlinkat(dirfd, pathname.cast::<u8>(), flags as u32) };
+    shim::code(r, |_| 0i32)
+}
+
 /// `int truncate(const char *path, off_t length)`
 #[no_mangle]
 pub extern "C" fn truncate(path: *const c_char, length: off_t) -> c_int {
@@ -439,6 +443,70 @@ const fn flock_request(operation: c_int) -> u64 {
 #[no_mangle]
 pub extern "C" fn umask(mask: mode_t) -> mode_t {
     shim::count(Posix::global().umask(mask), |old| old as c_int) as mode_t
+}
+
+/// `struct dirent64 *readdir64(DIR *dirp)` — `std::fs::read_dir`'s iterator step.
+///
+/// `std` reads directories through the libc `DIR *` stream, but TrangorgeOS has
+/// no libc-level directory stream — descriptors are the API (see `tgs_hal`). This
+/// returns null, which makes `std::fs::read_dir` yield an empty listing rather
+/// than fabricating `dirent64` records it cannot back.
+#[no_mangle]
+pub extern "C" fn readdir64(_dirp: *mut c_void) -> *mut c_void {
+    ptr::null_mut()
+}
+
+/// `int dirfd(DIR *dirp)` — there is no `DIR *` stream to recover an fd from.
+#[no_mangle]
+pub extern "C" fn dirfd(_dirp: *mut c_void) -> c_int {
+    -1
+}
+
+/// `int closedir(DIR *dirp)` — nothing to close.
+#[no_mangle]
+pub extern "C" fn closedir(_dirp: *mut c_void) -> c_int {
+    0
+}
+
+/// `void *mmap64(void *addr, size_t length, int prot, int flags, int fd, off64_t offset)`
+///
+/// `std`'s stack-overflow guard maps a guard page through this. TrangorgeOS has
+/// no userspace `mmap` syscall yet, so it reports `MAP_FAILED` and `std` runs
+/// without a guard page — the same honest answer it gives on any system with one.
+#[no_mangle]
+pub extern "C" fn mmap64(
+    _addr: *mut c_void,
+    _length: size_t,
+    _prot: c_int,
+    _flags: c_int,
+    _fd: c_int,
+    _offset: c_long,
+) -> *mut c_void {
+    usize::MAX as *mut c_void
+}
+
+/// `int mprotect(void *addr, size_t len, int prot)` — no userspace mmap to protect.
+#[no_mangle]
+pub extern "C" fn mprotect(_addr: *mut c_void, _len: size_t, _prot: c_int) -> c_int {
+    shim::fail(errno::ENOSYS)
+}
+
+/// `int munmap(void *addr, size_t length)` — nothing is mmap'd, nothing to unmap.
+#[no_mangle]
+pub extern "C" fn munmap(_addr: *mut c_void, _length: size_t) -> c_int {
+    shim::fail(errno::ENOSYS)
+}
+
+/// `DIR *opendir(const char *name)` — no libc `DIR` stream, see `readdir64`.
+#[no_mangle]
+pub extern "C" fn opendir(_name: *const c_char) -> *mut c_void {
+    ptr::null_mut()
+}
+
+/// `int stat64(const char *path, struct stat64 *buf)` — no `stat64` layout to fill.
+#[no_mangle]
+pub extern "C" fn stat64(_path: *const c_char, _buf: *mut c_void) -> c_int {
+    shim::fail(errno::ENOSYS)
 }
 
 /// `char *getcwd(char *buf, size_t size)`
@@ -540,11 +608,6 @@ pub extern "C" fn select(
     _timeout: *mut crate::types::timeval,
 ) -> c_int {
     shim::fail(errno::ENOSYS)
-}
-
-
-    let r = unsafe { Posix::global().unlinkat(dirfd, pathname.cast::<u8>(), flags as u32) };
-    shim::code(r, |_| 0i32)
 }
 
 /// `int rename(const char *oldpath, const char *newpath)`

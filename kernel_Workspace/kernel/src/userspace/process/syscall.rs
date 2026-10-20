@@ -8,9 +8,21 @@ pub const SYS_IPC_SEND: u64 = 0x1010;
 pub const SYS_IPC_RECV: u64 = 0x1011;
 pub const SYS_KEY: u64     = 0x1040;
 pub const SYS_MOUSE: u64   = 0x1041;
+pub const SYS_MOUSE_RAW: u64 = 0x1042;
 pub const SYS_READDIR: u64 = 0x1025;
 pub const SYS_RUNCL: u64   = 0x1050;
 pub const SYS_UI_OPEN: u64 = 0x1060;
+
+// POSIX block (0x2000+), the numbers `ustd/hal/src/sysnum.rs` declares as the
+// surface the ring-3 `std` runtime needs. Only the minimal set is wired up:
+// memory (mmap/munmap for the heap), console I/O (write for `println!`), time,
+// randomness and process exit. The rest fall through to `_ => u64::MAX`.
+pub const SYS_MMAP: u64 = 0x2000;
+pub const SYS_MUNMAP: u64 = 0x2001;
+pub const SYS_WRITE: u64 = 0x2007;
+pub const SYS_EXIT_GROUP: u64 = 0x2031;
+pub const SYS_CLOCK_GETTIME: u64 = 0x2039;
+pub const SYS_GETRANDOM: u64 = 0x203A;
 
 pub const UI_FB_VA: u64   = 0x5000_0000;
 pub const UI_FONT_VA: u64 = 0x6000_0000;
@@ -94,7 +106,122 @@ fn user_copy_out(cr3: u64, dst: u64, src: &[u8]) -> bool {
     true
 }
 
-static mut ELF_BUF: [u8; 64 * 1024] = [0; 64 * 1024];
+/// The next anonymous mapping address the POSIX `mmap` hands out. It starts well
+/// above the ring-3 image (which ends around 0x0062_0000, see `ustd/linker.ld`)
+/// and grows upward, so the heap can expand without colliding with the image.
+static mut MMAP_NEXT: u64 = 0x1000_0000;
+
+/// `void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)`.
+///
+/// Anonymous private mappings only, which is all `tgs-hal`'s heap asks for. The
+/// address hint is ignored and a fresh mapping is placed at [`MMAP_NEXT`].
+fn posix_mmap(cr3: u64, len: u64) -> u64 {
+    extern "C" {
+        fn paging_map_page_in(pml4: u64, virt: u64, phys: u64, flags: u64) -> bool;
+    }
+
+    let len = (len as usize).max(4096);
+    let pages = (len + 4095) / 4096;
+
+    let phys = match crate::mm::phys::alloc_frames(pages) {
+        Some(p) => p,
+        None => return u64::MAX,
+    };
+
+    let va = unsafe { MMAP_NEXT };
+    // `0x1 | 0x2 | 0x4 | 0x8` is the same "present + writable + user + NX" flag
+    // set the framebuffer mapping below uses; data mappings are not executable.
+    for i in 0..pages {
+        let ok = unsafe {
+            paging_map_page_in(
+                cr3,
+                va + (i * 4096) as u64,
+                phys + (i * 4096) as u64,
+                0x1 | 0x2 | 0x4 | 0x8,
+            )
+        };
+        if !ok {
+            return u64::MAX;
+        }
+    }
+
+    unsafe { MMAP_NEXT += (pages * 4096) as u64 };
+    va
+}
+
+/// `int munmap(void *addr, size_t len)`. The frames are deliberately not freed
+/// here — the heap hands out 64 KiB regions and only frees oversized ones, so a
+/// no-op is correct for the init demo and keeps the page-table walk simple.
+fn posix_munmap(_addr: u64, _len: u64) -> u64 {
+    0
+}
+
+/// `ssize_t write(int fd, const void *buf, size_t count)`. fd 1/2 are the
+/// console; anything else is refused. The bytes are copied out of the user
+/// address space and handed to `kprintf` as a `%s` argument, so any `%` in the
+/// text is printed literally rather than interpreted as a format specifier.
+fn posix_write(cr3: u64, fd: u64, buf: u64, count: u64) -> u64 {
+    if fd != 1 && fd != 2 {
+        return u64::MAX;
+    }
+
+    let mut tmp = [0u8; 1024];
+    let n = (count as usize).min(1023);
+    if !user_copy_in(cr3, buf, &mut tmp[..n]) {
+        return u64::MAX;
+    }
+    tmp[n] = 0;
+
+    unsafe {
+        kprintf(b"%s\0".as_ptr(), tmp.as_ptr());
+    }
+
+    count
+}
+
+/// `int clock_gettime(clockid_t clk, struct timespec *tp)`. A monotonic
+/// software clock; the exact epoch is irrelevant for `Instant`/`SystemTime` in
+/// the init demo — only that it advances.
+fn posix_clock_gettime(cr3: u64, tp: u64) -> u64 {
+    static mut NANOS: u64 = 0;
+
+    let nsec = unsafe { NANOS };
+    unsafe { NANOS += 1_000_000 };
+
+    let mut ts = [0u8; 16];
+    ts[0..8].copy_from_slice(&0u64.to_le_bytes()); // tv_sec
+    ts[8..16].copy_from_slice(&nsec.to_le_bytes()); // tv_nsec
+
+    if !user_copy_out(cr3, tp, &ts) {
+        return u64::MAX;
+    }
+    0
+}
+
+/// `ssize_t getrandom(void *buf, size_t buflen, unsigned int flags)`. A tiny
+/// LCG — enough for `HashMap`'s `RandomState` (it only needs a seed), not
+/// cryptographically strong.
+fn posix_getrandom(cr3: u64, buf: u64, buflen: u64) -> u64 {
+    static mut SEED: u64 = 0x1234_5678_9abc_def0;
+
+    let mut out = [0u8; 256];
+    let n = (buflen as usize).min(256);
+    for b in out[..n].iter_mut() {
+        unsafe {
+            SEED = SEED
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *b = (SEED >> 33) as u8;
+        }
+    }
+
+    if !user_copy_out(cr3, buf, &out[..n]) {
+        return u64::MAX;
+    }
+    n as u64
+}
+
+static mut ELF_BUF: [u8; 16 * 1024 * 1024] = [0; 16 * 1024 * 1024];
 
 fn do_spawn(cr3: u64, path_ptr: u64, parent_pid: u32) -> i64 {
     let mut tmp = [0u8; 128];
@@ -228,6 +355,17 @@ pub fn handle(world: usize, c: &mut tr::CpuCtx) {
                 }
             }
         }
+        SYS_MOUSE_RAW => {
+            // One raw PS/2 mouse byte, straight from the controller. The
+            // packet decode (assembly, sign extension, buttons) is a
+            // *userspace* driver (`tgs-hal/src/mouse.rs`); this path only
+            // hands over bytes and does not call `editor/mouse.c`.
+            crate::ps2mouse::init_once();
+            match crate::ps2mouse::raw_byte() {
+                Some(b) => b as u64,
+                None => u64::MAX,
+            }
+        }
         SYS_READDIR => {
             let idx = a0 as usize;
             let cap = (a2 as usize).min(127);
@@ -304,6 +442,18 @@ pub fn handle(world: usize, c: &mut tr::CpuCtx) {
                 0
             }
         }
+
+        SYS_MMAP => posix_mmap(cr3, a1),
+
+        SYS_MUNMAP => posix_munmap(a0, a1),
+
+        SYS_WRITE => posix_write(cr3, a0, a1, a2),
+
+        SYS_EXIT_GROUP => tr::exit_from(world, c, a0 as i32),
+
+        SYS_CLOCK_GETTIME => posix_clock_gettime(cr3, a1),
+
+        SYS_GETRANDOM => posix_getrandom(cr3, a0, a1),
 
         _ => u64::MAX,
     };

@@ -150,3 +150,22 @@ pub extern "C" fn _fini() {}
 /// linking against this crate finds the symbol.
 #[no_mangle]
 pub static __dso_handle: usize = 0;
+
+/// `int _Unwind_Backtrace(void (*trace)(void*, void*), void *trace_argument)`
+///
+/// `std`'s backtrace code references this even though `panic = "abort"` makes
+/// every path that calls it dead. It is stubbed rather than left undefined; see
+/// `README.md` under "known gaps".
+#[no_mangle]
+pub extern "C" fn _Unwind_Backtrace(_trace: *mut c_void, _arg: *mut c_void) -> c_int {
+    0
+}
+
+/// `uintptr_t _Unwind_GetIP(struct _Unwind_Context *context)`
+///
+/// Stubbed for the same reason as [`_Unwind_Backtrace`]: referenced, never
+/// called, and only needs to exist at link time.
+#[no_mangle]
+pub extern "C" fn _Unwind_GetIP(_ctx: *mut c_void) -> usize {
+    0
+}

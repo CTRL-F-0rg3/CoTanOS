@@ -384,6 +384,7 @@ pub fn registry() -> Vec<Command> {
         Command { name: "bmi", about: "bmi <kg> <cm>            C++ body mass index", run: cpp::bmi },
         Command { name: "rand", about: "rand [count] [max]       C++ LCG random numbers", run: cpp::rand },
         Command { name: "tui", about: "tui                      C++ ASCII dashboard (TUI)", run: cpp::tui },
+        Command { name: "titanus", about: "titanus                  launch the Titanus DE (ring 3)", run: system::titanus },
 
     ]
 }

@@ -242,6 +242,50 @@ pub extern "C" fn dlerror() -> *const c_char {
     MSG.as_ptr().cast()
 }
 
+/// `void *dlsym(void *handle, const char *symbol)` — no dynamic loader to search.
+#[no_mangle]
+pub extern "C" fn dlsym(_handle: *mut c_void, _symbol: *const c_char) -> *mut c_void {
+    ptr::null_mut()
+}
+
+/// `sighandler_t signal(int signum, sighandler_t handler)`
+///
+/// `std` calls this once at start-up to ignore `SIGPIPE`. There is no signal
+/// machinery to record a handler against, so the call is accepted and dropped,
+/// returning `SIG_DFL` (0) — the honest "no previous handler" answer.
+#[no_mangle]
+pub extern "C" fn signal(_signum: c_int, _handler: usize) -> usize {
+    0
+}
+
+/// `int pause(void)` — nothing to wake on, so report rather than hang forever.
+#[no_mangle]
+pub extern "C" fn pause() -> c_int {
+    -1
+}
+
+/// `int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)`
+///
+/// `std` registers a `SIGSEGV` handler for stack-overflow detection during its
+/// own init. TrangorgeOS has no signal machinery, so the registration is
+/// accepted and dropped; the handler is simply never invoked.
+#[no_mangle]
+pub extern "C" fn sigaction(
+    _signum: c_int,
+    _act: *const c_void,
+    _oldact: *mut c_void,
+) -> c_int {
+    0
+}
+
+/// `int sigaltstack(const stack_t *ss, stack_t *old_ss)`
+///
+/// No alternate signal stack exists. Accepted and dropped, like [`sigaction`].
+#[no_mangle]
+pub extern "C" fn sigaltstack(_ss: *const c_void, _old_ss: *mut c_void) -> c_int {
+    0
+}
+
 /// Write a message to descriptor 2, for a fatal path that has no `std` yet.
 fn eprintln_to_stderr(msg: &str) {
     let _ = Posix::global().write(2, msg.as_bytes());

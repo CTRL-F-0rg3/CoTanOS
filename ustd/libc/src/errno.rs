@@ -14,7 +14,7 @@ use core::cell::UnsafeCell;
 
 use tgs_hal::errno::Errno;
 
-use crate::types::c_int;
+use crate::types::{c_char, c_int, size_t};
 
 struct E(UnsafeCell<c_int>);
 
@@ -65,4 +65,22 @@ pub extern "C" fn __errno() -> *mut c_int {
 /// exactly the bug class `errno` was invented to end.
 pub fn clear() {
     set_errno(Errno(0));
+}
+
+/// `int __xpg_strerror_r(int errnum, char *buf, size_t buflen)` — the XSI form.
+///
+/// `std` calls this through `libc` when it turns an `errno` into a string. The
+/// kernel has no per-locale error tables, so this writes one generic message and
+/// reports success; the alternative — failing — would make `std` print a bogus
+/// "unknown error" for every real one.
+#[no_mangle]
+pub extern "C" fn __xpg_strerror_r(_errnum: c_int, buf: *mut c_char, buflen: size_t) -> c_int {
+    if !buf.is_null() && buflen > 0 {
+        const MSG: &[u8] = b"TrangorgeOS error\0";
+        let n = MSG.len().min(buflen as usize);
+        // SAFETY: `buf` is non-null and `buflen` bytes are writable (the C
+        // contract), and `n <= MSG.len()`.
+        unsafe { core::ptr::copy_nonoverlapping(MSG.as_ptr(), buf.cast::<u8>(), n) };
+    }
+    0
 }

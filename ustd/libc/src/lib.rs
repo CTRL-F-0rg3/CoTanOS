@@ -70,3 +70,62 @@ pub mod time;
 
 #[cfg(feature = "sysroot")]
 pub use mem::System;
+
+/// Address-take every `#[no_mangle]` symbol `std` links against, so lld keeps
+/// them.
+///
+/// `-Zbuild-std` places this crate's rlib *before* the freshly built `std` (see
+/// `build.sh`). A linker only pulls a member out of an archive when that member
+/// resolves a symbol that is undefined at the point the archive is seen, so when
+/// lld reaches this crate nothing has asked for `malloc`/`write`/`abort` yet and
+/// it discards the members — and then `std` asks for them and finds nothing.
+///
+/// `tgs-rt` references this one function (it is what defines `_start`), and the
+/// address-takes below force every member back out of the archive whatever order
+/// they arrive in.
+#[cfg(feature = "sysroot")]
+#[no_mangle]
+pub extern "C" fn tgs_libc_anchor() {
+    let keep = [
+        mem::malloc as *const () as usize,
+        mem::calloc as *const () as usize,
+        mem::realloc as *const () as usize,
+        mem::free as *const () as usize,
+        mem::posix_memalign as *const () as usize,
+        process::abort as *const () as usize,
+        process::syscall as *const () as usize,
+        process::dlsym as *const () as usize,
+        process::signal as *const () as usize,
+        process::pause as *const () as usize,
+        process::sigaction as *const () as usize,
+        process::sigaltstack as *const () as usize,
+        fs::write as *const () as usize,
+        fs::writev as *const () as usize,
+        fs::read as *const () as usize,
+        fs::close as *const () as usize,
+        fs::readlink as *const () as usize,
+        fs::readdir64 as *const () as usize,
+        fs::dirfd as *const () as usize,
+        fs::closedir as *const () as usize,
+        fs::mmap64 as *const () as usize,
+        fs::mprotect as *const () as usize,
+        fs::munmap as *const () as usize,
+        fs::opendir as *const () as usize,
+        fs::stat64 as *const () as usize,
+        time::clock_gettime as *const () as usize,
+        errno::__errno_location as *const () as usize,
+        errno::__xpg_strerror_r as *const () as usize,
+        thread::pthread_key_create as *const () as usize,
+        thread::pthread_key_delete as *const () as usize,
+        thread::pthread_getspecific as *const () as usize,
+        thread::pthread_setspecific as *const () as usize,
+        thread::pthread_attr_getguardsize as *const () as usize,
+        thread::pthread_attr_getstack as *const () as usize,
+        thread::pthread_detach as *const () as usize,
+        thread::pthread_getattr_np as *const () as usize,
+        thread::pthread_setname_np as *const () as usize,
+        cxa::_Unwind_Backtrace as *const () as usize,
+        cxa::_Unwind_GetIP as *const () as usize,
+    ];
+    core::hint::black_box(keep);
+}

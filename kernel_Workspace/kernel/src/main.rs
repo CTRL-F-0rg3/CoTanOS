@@ -34,6 +34,8 @@ mod nic;
 #[cfg(target_arch = "x86_64")]
 mod pci;
 #[cfg(target_arch = "x86_64")]
+mod ps2mouse;
+#[cfg(target_arch = "x86_64")]
 mod terminal;
 
 #[cfg(target_arch = "x86_64")]
@@ -291,6 +293,7 @@ pub fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
             if has_init {
                 println!("[boot-dbg] ring-3 init found, entering userspace");
                 trampoline_rings::init();
+                println!("[boot-dbg] trampoline_rings::init() OK");
                 if let Err(e) = crate::userspace::process::spawn::spawn_init() {
                     println!("[boot] ring-3 spawn failed: {e}");
                 } else {

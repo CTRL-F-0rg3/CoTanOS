@@ -690,6 +690,15 @@ fn execute(line: &str) {
                 crate::println!("usage: res <320|640|WxH|W:H>  (e.g. res 1920:1080)");
             }
         }
+        "titanus" => {
+            // Spawn the ring-3 desktop and hand off to it; only a failure
+            // returns here (missing /bin/titanus.elf, world table full, ...).
+            crate::trampoline_rings::init();
+            match crate::userspace::process::spawn::spawn_elf("/bin/titanus.elf") {
+                Ok(()) => crate::trampoline_rings::start(),
+                Err(e) => crate::println!("titanus: {e}"),
+            }
+        }
         "poweroff" => {
             crate::println!("powering off...");
             if !crate::cpu::poweroff() {

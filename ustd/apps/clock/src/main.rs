@@ -5,6 +5,9 @@
 //! linear interpolation. The time is a software counter advanced once per
 //! frame; on a real kernel the same loop would read `clock_gettime` instead.
 
+// Link the `_start` entry point and `main` shim (not `use`d below).
+extern crate tgs_rt;
+
 use tgs_gfx::{draw_circle, draw_line, draw_text, fill_circle, fill_rect, idle, open_canvas, rgb, Canvas, Color};
 
 /// `sin(i * 90/16)` scaled to 0..255, plus one extra sample at 90 degrees.

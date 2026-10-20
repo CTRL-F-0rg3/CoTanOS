@@ -20,6 +20,11 @@
 //! A section that cannot work says so and carries on. A demo that stopped at the
 //! first `ENOSYS` would not tell anyone which parts of the sysroot are done.
 
+// Link `tgs-rt` (the `_start` entry point and the `main` shim). It is not
+// `use`d below, but it is what makes this a runnable ELF rather than a crate
+// full of `std` calls with no entry point.
+extern crate tgs_rt;
+
 use std::collections::HashMap;
 use std::fs;
 use std::time::{Instant, SystemTime};

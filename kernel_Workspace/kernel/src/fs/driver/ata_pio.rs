@@ -162,6 +162,7 @@ impl AtaPio {
     fn read_sector(&self, lba: u32, buf: &mut [u8]) -> Result<(), DriverError> {
         let _g = IrqGuard::lock();
 
+        self.wait_not_bsy()?;
         self.setup_lba28(lba, 1, ATA_CMD_READ28)?;
         self.wait_drq()?;
 
@@ -169,6 +170,30 @@ impl AtaPio {
             let w = unsafe { port::inw(self.base + ATA_REG_DATA) };
             buf[i * 2] = (w & 0xFF) as u8;
             buf[i * 2 + 1] = (w >> 8) as u8;
+        }
+
+        Ok(())
+    }
+
+    /// Read `count` sectors (1..=255) in a single `READ28` command. `DRQ` is
+    /// asserted per sector, so the wait stays per sector; the win is one command
+    /// and one busy-wait per *batch* instead of per 512-byte block — a multi-MB
+    /// ELF image drops from ~19 000 PIO commands to ~75.
+    fn read_sectors(&self, lba: u32, count: u8, buf: &mut [u8]) -> Result<(), DriverError> {
+        let _g = IrqGuard::lock();
+
+        self.wait_not_bsy()?;
+        self.setup_lba28(lba, count, ATA_CMD_READ28)?;
+
+        for s in 0..count as usize {
+            self.wait_drq()?;
+
+            for i in 0..256 {
+                let w = unsafe { port::inw(self.base + ATA_REG_DATA) };
+                let off = (s * 256 + i) * 2;
+                buf[off] = (w & 0xFF) as u8;
+                buf[off + 1] = (w >> 8) as u8;
+            }
         }
 
         Ok(())
@@ -219,6 +244,37 @@ impl BlockDevice for AtaPio {
         }
 
         self.read_sector(block as u32, buf)
+    }
+
+    fn read_blocks(&self, start: u64, count: u64, buf: &mut [u8]) -> Result<(), DriverError> {
+        if !self.present.load(Ordering::Relaxed) {
+            return Err(DriverError::NoDevice);
+        }
+
+        let bs = self.block_size();
+        let expected = (count as usize)
+            .checked_mul(bs)
+            .ok_or(DriverError::InvalidLength)?;
+
+        if buf.len() < expected {
+            return Err(DriverError::InvalidLength);
+        }
+
+        let mut off = 0usize;
+        let mut blk = start;
+
+        while off < expected {
+            let remaining = (expected - off) / bs;
+            let chunk = remaining.min(255) as u8;
+            let bytes = chunk as usize * bs;
+
+            self.read_sectors(blk as u32, chunk, &mut buf[off..off + bytes])?;
+
+            off += bytes;
+            blk += chunk as u64;
+        }
+
+        Ok(())
     }
 
     fn write_block(&self, block: u64, buf: &[u8]) -> Result<(), DriverError> {

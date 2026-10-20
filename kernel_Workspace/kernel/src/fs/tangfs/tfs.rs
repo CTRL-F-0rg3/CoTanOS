@@ -417,16 +417,13 @@ pub fn entries(dev: &dyn BlockDevice, dir: u32) -> Result<alloc::vec::Vec<(alloc
 pub fn read_file(dev: &dyn BlockDevice, dir: u32, name: &str) -> Result<alloc::vec::Vec<u8>> {
     let (_, e) = find_entry(dev, dir, name)?;
 
-    let mut data = alloc::vec![0u8; e.size as usize];
-    let blocks = (e.size as usize + 511) / 512;
-
-    for i in 0..blocks {
-        let mut block = [0u8; 512];
-        dev.read_block(e.first_block as u64 + i as u64, &mut block).map_err(|_| FsError::Io)?;
-        let start = i * 512;
-        let end = core::cmp::min(start + 512, data.len());
-        data[start..end].copy_from_slice(&block[..end - start]);
-    }
+    let size = e.size as usize;
+    let blocks = (size + 511) / 512;
+    // Round up to whole sectors so `read_blocks` (one ATA command per batch of
+    // sectors) can fill the buffer, then drop the padding.
+    let mut data = alloc::vec![0u8; blocks * 512];
+    dev.read_blocks(e.first_block as u64, blocks as u64, &mut data).map_err(|_| FsError::Io)?;
+    data.truncate(size);
 
     Ok(data)
 }
