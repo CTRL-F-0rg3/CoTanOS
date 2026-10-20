@@ -293,6 +293,7 @@ pub fn kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
             if has_init {
                 println!("[boot-dbg] ring-3 init found, entering userspace");
                 trampoline_rings::init();
+                println!("[boot-dbg] trampoline_rings::init() OK");
                 if let Err(e) = crate::userspace::process::spawn::spawn_init() {
                     println!("[boot] ring-3 spawn failed: {e}");
                 } else {

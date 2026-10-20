@@ -221,7 +221,7 @@ fn posix_getrandom(cr3: u64, buf: u64, buflen: u64) -> u64 {
     n as u64
 }
 
-static mut ELF_BUF: [u8; 64 * 1024] = [0; 64 * 1024];
+static mut ELF_BUF: [u8; 16 * 1024 * 1024] = [0; 16 * 1024 * 1024];
 
 fn do_spawn(cr3: u64, path_ptr: u64, parent_pid: u32) -> i64 {
     let mut tmp = [0u8; 128];

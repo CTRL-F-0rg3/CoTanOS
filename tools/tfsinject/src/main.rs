@@ -24,7 +24,7 @@ const K_DIR: u8 = 2;
 
 /// host binary name in `<bin-dir>`  ->  TFS path (relative to `/`).
 const BINARIES: &[(&str, &str)] = &[
-    ("tgs-init", "bin/init.elf"),
+    ("titanus", "bin/init.elf"),
     ("titanus", "bin/titanus.elf"),
     ("tgs-pattern", "bin/pattern.elf"),
     ("tgs-plasma", "bin/plasma.elf"),

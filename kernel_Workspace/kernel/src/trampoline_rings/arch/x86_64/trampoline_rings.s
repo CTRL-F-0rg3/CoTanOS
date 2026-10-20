@@ -94,6 +94,13 @@ isr_hypercall:
 .global isr_default
 .type isr_default, @function
 isr_default:
+    // After `init()` swaps the IDT for the trampoline one, this is the only
+    // handler every IRQ reaches. Send an EOI to both PICs so a level-triggered
+    // IRQ (keyboard, PIT) is acknowledged and does not re-fire forever; the
+    // write is harmless for exceptions and LAPIC interrupts.
+    mov $0x20, %al
+    out %al, $0x20
+    out %al, $0xA0
     iretq
 
 .global tr_restore_ctx

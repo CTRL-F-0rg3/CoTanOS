@@ -144,7 +144,6 @@ ${FORCE_SYMS[@]}"
 PKG=(
     --manifest-path "$HERE/Cargo.toml"
     --target "$TARGET_JSON"
-    -p tgs-init
     -p tgs-pattern
     -p tgs-plasma
     -p tgs-clock
@@ -167,7 +166,7 @@ BIN_DIR="$HERE/target/x86_64-trangorge-uspace/$PROFILE"
 
 echo
 echo "built userspace binaries:"
-for bin in tgs-init tgs-pattern tgs-plasma tgs-clock tgs-paint mandel titanus; do
+for bin in titanus tgs-pattern tgs-plasma tgs-clock tgs-paint mandel; do
     echo "  $BIN_DIR/$bin"
     if command -v file >/dev/null 2>&1; then
         file "$BIN_DIR/$bin"
