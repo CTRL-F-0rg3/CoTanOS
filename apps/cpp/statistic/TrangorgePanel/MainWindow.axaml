@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TrangorgePanel.MainWindow"
+        Title="TrangorgeOS - System Panel"
+        Width="400" Height="300"
+        Background="#1E1E2E" Foreground="#CDD6F4">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Nagłówek -->
+        <TextBlock Grid.Row="0" Text="TRANGORGE OS PANEL" FontSize="24" FontWeight="Bold" 
+                   HorizontalAlignment="Center" Margin="0,0,0,20" Foreground="#89B4FA"/>
+
+        <!-- CPU -->
+        <StackPanel Grid.Row="1" Margin="0,10">
+            <Grid>
+                <TextBlock Text="CPU Usage" VerticalAlignment="Center"/>
+                <TextBlock Name="TxtCpu" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#F38BA8"/>
+            </Grid>
+            <ProgressBar Name="BarCpu" Height="15" Margin="0,5,0,0" Background="#313244" Foreground="#F38BA8"/>
+        </StackPanel>
+
+        <!-- RAM -->
+        <StackPanel Grid.Row="2" Margin="0,10">
+            <Grid>
+                <TextBlock Text="RAM Usage" VerticalAlignment="Center"/>
+                <TextBlock Name="TxtRam" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#A6E3A1"/>
+            </Grid>
+            <ProgressBar Name="BarRam" Height="15" Margin="0,5,0,0" Background="#313244" Foreground="#A6E3A1"/>
+        </StackPanel>
+
+        <!-- Stopka -->
+        <TextBlock Grid.Row="3" Name="TxtTotalRam" Text="Total RAM: " FontSize="12" 
+                   HorizontalAlignment="Center" Foreground="#6C7086" Margin="0,10,0,0"/>
+    </Grid>
+</Window>
