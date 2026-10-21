@@ -119,6 +119,8 @@ pub fn init() {
 
         set_gate(0x80, hyp, 3);
 
+        IDT_PTR.limit = (core::mem::size_of_val(&IDT) - 1) as u16;
+        IDT_PTR.base = IDT.as_ptr() as u64;
         asm!("lidt [{}]", in(reg) &IDT_PTR);
     }
 }
