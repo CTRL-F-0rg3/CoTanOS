@@ -1,40 +1,43 @@
-// regs.rs — Adaptec AAC RAID register offsets and doorbell bit flags.
 
-// Device register block (Bar0) sub-registers.
+pub const AAC_BLOCK_SIZE: u32 = 512;
+
+pub const AAC_MAX_CONTAINERS: usize = 64;
+
 pub mod rx {
-    pub const IDBR: u32 = 0x00;
-    pub const ODBR: u32 = 0x04;
-    pub const FWSTATUS: u32 = 0x08;
-    pub const FW_STATUS: u32 = 0x08;
-    pub const MAILBOX: u32 = 0x50;
-    pub const OIMR: u32 = 0x3C;
-    pub const STS_UP_AND_RUNNING: u32 = 0x00000002;
-    pub const BASE_PTR_LO: u32 = 0x10;
-    pub const BASE_PTR_HI: u32 = 0x14;
-    pub const INBOUND_DOORBELL: u32 = 0x00;
-    pub const DB_INIT: u32 = 0x00000001;
-    pub const OUTBOUND_DOORBELL: u32 = 0x04;
-    pub const DB_INIT_ACK: u32 = 0x00000001;
-    pub const OUT_INTR_MASK: u32 = 0x3C;
-    pub const DB_COMMAND_READY: u32 = 0x00000008;
-    pub const DB_RESPONSE_READY: u32 = 0x00000002;
-    pub const DB_PRINTF: u32 = 0x00000004;
+    pub const OMR0: u32 = 0x18; // Outbound Message Register 0
+    pub const OMR1: u32 = 0x1c; // Outbound Message Register 1
+    pub const IDBR: u32 = 0x20; // Inbound Doorbell Register (Host -> Adapter)
+    pub const IISR: u32 = 0x24; // Inbound Interrupt Status
+    pub const IIMR: u32 = 0x28; // Inbound Interrupt Mask
+    pub const ODBR: u32 = 0x2c; // Outbound Doorbell Register (Adapter -> Host)
+    pub const OISR: u32 = 0x30; // Outbound Interrupt Status
+    pub const OIMR: u32 = 0x34; // Outbound Interrupt Mask
+    pub const IQUE: u32 = 0x40; // Inbound Queue (tu "wrzucamy" FIB-y)
+    pub const OQUE: u32 = 0x44; // Outbound Queue (tu "wyjmujemy" odpowiedzi)
+    pub const MAILBOX: u32 = 0x50; // Mailbox (20 bytes)
+    pub const FWSTATUS: u32 = 0x6c; // Firmware Status
 }
 
-// Top-level doorbell / status bits (transcribed from aacreg.h / FreeBSD aac driver).
-pub const IDBR: u32 = 0x00;
-pub const ODBR: u32 = 0x04;
-pub const FWSTATUS: u32 = 0x08;
-pub const FW_STATUS: u32 = FWSTATUS;
-pub const MAILBOX: u32 = 0x50;
-pub const OIMR: u32 = 0x3C;
+pub const DB_SYNC_COMMAND: u32 = 1 << 0;
+pub const DB_COMMAND_READY: u32 = 1 << 1;
+pub const DB_RESPONSE_READY: u32 = 1 << 2;
+pub const DB_COMMAND_NOT_FULL: u32 = 1 << 3;
+pub const DB_RESPONSE_NOT_FULL: u32 = 1 << 4;
+pub const DB_PRINTF: u32 = 1 << 5;
 
-pub const AAC_SELF_TEST_FAILED: u32 = 0x00000001;
-pub const AAC_UP_AND_RUNNING: u32 = 0x00000002;
-pub const STS_UP_AND_RUNNING: u32 = AAC_UP_AND_RUNNING;
+pub const DB_INTERRUPTS: u32 = DB_COMMAND_READY | DB_RESPONSE_READY | DB_PRINTF;
 
-pub const DB_SYNC_COMMAND: u32 = 0x00000001;
-pub const DB_INIT: u32 = DB_SYNC_COMMAND;
-pub const DB_RESPONSE_READY: u32 = 0x00000002;
-pub const DB_PRINTF: u32 = 0x00000004;
-pub const DB_COMMAND_READY: u32 = 0x00000008;
+
+
+pub const HOST_NORM_CMD_ENTRIES: usize = 8;
+pub const HOST_HIGH_CMD_ENTRIES: usize = 4;
+pub const ADAP_NORM_CMD_ENTRIES: usize = 512;
+pub const ADAP_HIGH_CMD_ENTRIES: usize = 4;
+
+pub const HOST_NORM_RESP_ENTRIES: usize = 512;
+pub const HOST_HIGH_RESP_ENTRIES: usize = 4;
+pub const ADAP_NORM_RESP_ENTRIES: usize = 8;
+pub const ADAP_HIGH_RESP_ENTRIES: usize = 4;
+
+pub const QUEUE_COUNT: usize = 8;
+pub const QUEUE_ALIGN: usize = 16;
