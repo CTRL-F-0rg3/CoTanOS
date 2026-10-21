@@ -111,6 +111,8 @@ void *buddy_alloc(size_t size) {
 	buddy_order[idx] = (uint8_t)o;
 	buddy_state[idx] = BUDDY_STATE_USED;
 	size_t bytes = order_size(o);
+	kprintf("[buddy] alloc size=%zu order=%zu idx=%zu bytes=%zu va=0x%llx\n",
+	        size, o, idx, bytes, (unsigned long long)va_of(idx));
 	if (!buddy_map(va_of(idx), bytes)) {
 	    buddy_state[idx] = BUDDY_STATE_FREE;
 	    fl_push(o, idx);
@@ -140,6 +142,8 @@ void buddy_free(void *ptr) {
 	size_t idx = page_of(va);
 	if (buddy_state[idx] != BUDDY_STATE_USED) return;
 	size_t o = buddy_order[idx], bytes = order_size(o);
+	kprintf("[buddy] free idx=%zu order=%zu bytes=%zu va=0x%llx\n",
+	        idx, o, bytes, (unsigned long long)va);
 	buddy_unmap(va, bytes);
 	buddy_state[idx] = BUDDY_STATE_FREE;
 	buddy_order[idx] = (uint8_t)o;

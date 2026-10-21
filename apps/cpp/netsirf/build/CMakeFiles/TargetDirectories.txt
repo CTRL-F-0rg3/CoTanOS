@@ -1,0 +1,3 @@
+/home/ctrl/TrangorgeOS/apps/cpp/netsirf/build/CMakeFiles/web_browser.dir
+/home/ctrl/TrangorgeOS/apps/cpp/netsirf/build/CMakeFiles/edit_cache.dir
+/home/ctrl/TrangorgeOS/apps/cpp/netsirf/build/CMakeFiles/rebuild_cache.dir
