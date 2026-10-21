@@ -13,6 +13,8 @@
 #include "../../arch/x86_64/memory.h"
 #include "../../core/sizeutil.h"
 
+extern void kprintf(const char *fmt, ...);
+
 #define HEAP_BUDDY_BASE 0xFFFFB00000000000ULL
 #define HEAP_BUDDY_SIZE (256ULL * 1024 * 1024)
 
@@ -25,6 +27,8 @@ static bool heap_slab_on = false;
 static bool heap_map_cb(uint64_t virt, size_t size)
 {
 	size_t pages = size / ARCH_PAGE_SIZE;
+	kprintf("[heap] map_cb virt=0x%llx pages=%zu\\n",
+	        (unsigned long long)virt, pages);
 
 	for (size_t i = 0; i < pages; i++) {
 	    uint64_t phys = 0;
@@ -62,10 +66,12 @@ static bool heap_map_cb(uint64_t virt, size_t size)
 	            }
 	        }
 
+	        kprintf("[heap] map_cb FAILED at page %zu\n", i);
 	        return false;
 	    }
 	}
 
+	kprintf("[heap] map_cb done\n");
 	return true;
 }
 
