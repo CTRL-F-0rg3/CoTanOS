@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/ctrl/TrangorgeOS/apps/cpp/netsirf/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
