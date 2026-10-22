@@ -1,0 +1,61 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TrangorgeNotepad.MainWindow"
+        Title="TrangorgeOS - Notatnik"
+        Width="900" Height="600"
+        Background="#1E1E2E"
+        Foreground="#CDD6F4">
+
+    <DockPanel>
+        <!-- Menu górne -->
+        <Menu DockPanel.Dock="Top" Background="#313244" Foreground="#CDD6F4">
+            <MenuItem Header="_Plik">
+                <MenuItem Header="_Nowy" Click="MenuNew_Click" InputGesture="Ctrl+N"/>
+                <MenuItem Header="_Otwórz" Click="MenuOpen_Click" InputGesture="Ctrl+O"/>
+                <MenuItem Header="_Zapisz" Click="MenuSave_Click" InputGesture="Ctrl+S"/>
+                <MenuItem Header="Zapisz _jako..." Click="MenuSaveAs_Click" InputGesture="Ctrl+Shift+S"/>
+                <Separator/>
+                <MenuItem Header="Za_mknij" Click="MenuExit_Click" InputGesture="Alt+F4"/>
+            </MenuItem>
+            <MenuItem Header="_Edycja">
+                <MenuItem Header="_Cofnij" Click="MenuUndo_Click" InputGesture="Ctrl+Z"/>
+                <MenuItem Header="_Ponów" Click="MenuRedo_Click" InputGesture="Ctrl+Y"/>
+                <Separator/>
+                <MenuItem Header="Wy_bierz wszystko" Click="MenuSelectAll_Click" InputGesture="Ctrl+A"/>
+            </MenuItem>
+            <MenuItem Header="_Widok">
+                <MenuItem Header="_Status bar" Name="MenuItemStatusBar" Click="MenuToggleStatusBar_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- Pasek statusu na dole -->
+        <Border DockPanel.Dock="Bottom" Background="#313244" Padding="10,5" Name="StatusBar">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0" Name="TxtStatus" Text="Gotowy" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Name="TxtLines" Text="Linie: 0" Margin="20,0,0,0" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Name="TxtWords" Text="Słowa: 0" Margin="20,0,0,0" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="3" Name="TxtChars" Text="Znaki: 0" Margin="20,0,0,0" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <!-- Główny edytor tekstu -->
+        <TextBox Name="TxtEditor"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 FontFamily="Consolas, Monaco, monospace"
+                 FontSize="14"
+                 Background="#1E1E2E"
+                 Foreground="#CDD6F4"
+                 CaretBrush="#F5E0DC"
+                 SelectionBrush="#45475A"
+                 Padding="10"
+                 TextChanged="TxtEditor_TextChanged"/>
+    </DockPanel>
+</Window>
