@@ -35,6 +35,25 @@ extern "C" {
     static mut tr_tss: [u8; 104];
     static mut isr_hypercall: u8;
     static mut isr_default: u8;
+    static mut isr_pf: u8;
+    static mut isr_gp: u8;
+    static mut isr_ud: u8;
+    static mut isr_df: u8;
+}
+
+/// Reports a CPU exception that reached the trampoline IDT, then halts.
+///
+/// `isr_default` cannot report: it is shared by every vector and would also
+/// fire for IRQs, and it does not pop the error code a fault pushes, so it
+/// corrupts the iret frame and triple-faults. The dedicated stubs above pop
+/// the error code themselves and hand the interesting values here.
+#[no_mangle]
+extern "C" fn tr_exception(vector: u64, err: u64, cr2: u64) -> ! {
+    extern "C" { fn kprintf(fmt: *const u8, ...); }
+    unsafe {
+        kprintf(b"[exc] vector=%llx err=%llx cr2=%llx\n\0".as_ptr(), vector, err, cr2);
+    }
+    loop { core::hint::spin_loop(); }
 }
 
 #[repr(C, packed)]
@@ -123,6 +142,14 @@ pub fn init() {
         }
 
         set_gate(0x80, hyp, 3);
+
+        // Fatal faults get a reporting handler so a ring-3 crash prints its
+        // vector/error/CR2 instead of silently triple-faulting through
+        // `isr_default` (which cannot pop the error code).
+        set_gate(0x08, &isr_df as *const _ as u64, 0);
+        set_gate(0x06, &isr_ud as *const _ as u64, 0);
+        set_gate(0x0D, &isr_gp as *const _ as u64, 0);
+        set_gate(0x0E, &isr_pf as *const _ as u64, 0);
 
         IDT_PTR.limit = (core::mem::size_of_val(&IDT) - 1) as u16;
         IDT_PTR.base = IDT.as_ptr() as u64;

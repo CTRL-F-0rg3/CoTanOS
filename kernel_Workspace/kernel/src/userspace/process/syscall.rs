@@ -23,6 +23,11 @@ pub const SYS_WRITE: u64 = 0x2007;
 pub const SYS_EXIT_GROUP: u64 = 0x2031;
 pub const SYS_CLOCK_GETTIME: u64 = 0x2039;
 pub const SYS_GETRANDOM: u64 = 0x203A;
+pub const SYS_IOCTL: u64 = 0x2013;
+pub const SYS_FCNTL: u64 = 0x2014;
+pub const SYS_PPOLL: u64 = 0x2018;
+pub const SYS_SCHED_GETAFFINITY: u64 = 0x203B;
+pub const SYS_NANOSLEEP: u64 = 0x202B;
 
 pub const UI_FB_VA: u64   = 0x5000_0000;
 pub const UI_FONT_VA: u64 = 0x6000_0000;
@@ -260,13 +265,21 @@ fn do_spawn(cr3: u64, path_ptr: u64, parent_pid: u32) -> i64 {
         return -1;
     }
 
+    let entry = loaded.entry;
+    let aspace_cr3 = loaded.aspace.cr3();
+
     let world = match tr::add_world(tr::RING_USER,
-                                    loaded.aspace.cr3(),
-                                    loaded.entry,
+                                    aspace_cr3,
+                                    entry,
                                     tr::USER_STACK_TOP, 0) {
         Some(w) => w,
         None => return -1,
     };
+
+    // Same lifetime rule as `spawn_elf`: the world owns these page tables now,
+    // so the address space must not be dropped (that would unmap the stack VMA
+    // and free the PML4 out from under the freshly spawned ring-3 process).
+    core::mem::forget(loaded.aspace);
 
     match P::register(world, parent_pid) {
         Some(pid) => pid as i64,

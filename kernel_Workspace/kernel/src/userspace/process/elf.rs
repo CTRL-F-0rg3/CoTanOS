@@ -5,6 +5,7 @@
 //! freshly allocated frames and mapped into a new user address space; the BSS
 //! (the gap between `p_filesz` and `p_memsz`) is zeroed.
 
+use alloc::vec::Vec;
 use crate::mm::space::{AddressSpace, ProtFlags, PROT_EXEC, PROT_READ, PROT_USER, PROT_WRITE};
 
 /// The kernel's physical direct-map base (same constant the rest of the kernel
@@ -59,6 +60,14 @@ pub fn load(buf: &[u8]) -> Result<Loaded, &'static str> {
     let phnum = u16_at(buf, 56) as usize;
 
     let aspace = AddressSpace::new().ok_or("elf: aspace create failed")?;
+
+    // Tracks every page already mapped by an earlier `PT_LOAD` segment, so the
+    // loader can merge two segments that share a page. That happens whenever a
+    // segment is not 4 KiB-aligned: the `.text` and `.rodata` segments of a
+    // Rust `std` binary share one page (`0x1077xxx`), and the naive
+    // "map each segment into its own fresh frame" approach lets the second map
+    // clobber the first segment's code and downgrade the page to read-only.
+    let mut mapped: Vec<(u64, u64, ProtFlags)> = Vec::new(); // (virt, phys, prot)
 
     for i in 0..phnum {
         let off = phoff + i * phentsize;
@@ -121,8 +130,51 @@ pub fn load(buf: &[u8]) -> Result<Loaded, &'static str> {
             prot = prot | PROT_EXEC;
         }
 
-        if !aspace.map_phys(map_va, phys, pages * 4096, prot) {
-            return Err("elf: map failed");
+        // Map one page at a time so a page shared with an earlier segment is
+        // merged (data copied into the existing frame, permissions OR-ed)
+        // instead of clobbering that earlier segment's code/data.
+        for p in 0..pages {
+            let v = map_va + p as u64 * 4096;
+            let page_phys = phys + p as u64 * 4096;
+
+            match mapped.iter().position(|(pv, _, _)| *pv == v) {
+                None => {
+                    if !aspace.map_phys(v, page_phys, 4096, prot) {
+                        return Err("elf: map failed");
+                    }
+                    mapped.push((v, page_phys, prot));
+                }
+                Some(idx) => {
+                    let (_, ephys, old_prot) = mapped[idx];
+
+                    // Copy only the bytes this segment owns inside the shared
+                    // page (the range [p_vaddr, p_vaddr + p_memsz) clipped to
+                    // the page), leaving the rest of the frame untouched.
+                    let seg_start = p_vaddr;
+                    let seg_end = p_vaddr + p_memsz as u64;
+                    let ov_start = seg_start.max(v);
+                    let ov_end = seg_end.min(v + 4096);
+
+                    if ov_end > ov_start {
+                        let off = (ov_start - v) as usize;
+                        let n = (ov_end - ov_start) as usize;
+                        // SAFETY: both `page_phys` and `ephys` are direct-map
+                        // aliases of allocated frames; the range is within one
+                        // page and `off + n <= 4096`.
+                        unsafe {
+                            let src = (DIRECT_BASE + page_phys + off as u64) as *const u8;
+                            let dst = (DIRECT_BASE + ephys + off as u64) as *mut u8;
+                            core::ptr::copy_nonoverlapping(src, dst, n);
+                        }
+                    }
+
+                    let merged = old_prot | prot;
+                    if !aspace.map_phys(v, ephys, 4096, merged) {
+                        return Err("elf: map failed");
+                    }
+                    mapped[idx] = (v, ephys, merged);
+                }
+            }
         }
     }
 
