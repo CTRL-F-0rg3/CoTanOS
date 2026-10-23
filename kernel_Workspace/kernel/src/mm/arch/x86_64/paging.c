@@ -400,7 +400,7 @@ static uint64_t *resolve_pte(uint64_t pml4_phys, uint64_t virt, bool create)
         if (!create) {
             return NULL;
         }
-        ensure_table_entry(pml4, idx, PTE_PRESENT | PTE_WRITABLE);
+        ensure_table_entry(pml4, idx, PTE_PRESENT | PTE_WRITABLE | PTE_USER);
         entry = pml4[idx];
     }
     pdpt = phys_to_ptr(entry & PAGING_ADDR_MASK);
@@ -411,7 +411,7 @@ static uint64_t *resolve_pte(uint64_t pml4_phys, uint64_t virt, bool create)
         if (!create) {
             return NULL;
         }
-        ensure_table_entry(pdpt, idx, PTE_PRESENT | PTE_WRITABLE);
+        ensure_table_entry(pdpt, idx, PTE_PRESENT | PTE_WRITABLE | PTE_USER);
         entry = pdpt[idx];
     }
     if (entry & PTE_PAGE_SIZE) {
@@ -425,7 +425,7 @@ static uint64_t *resolve_pte(uint64_t pml4_phys, uint64_t virt, bool create)
         if (!create) {
             return NULL;
         }
-        ensure_table_entry(pd, idx, PTE_PRESENT | PTE_WRITABLE);
+        ensure_table_entry(pd, idx, PTE_PRESENT | PTE_WRITABLE | PTE_USER);
         entry = pd[idx];
     }
     if (entry & PTE_PAGE_SIZE) {

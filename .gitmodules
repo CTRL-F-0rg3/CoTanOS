@@ -1,3 +1,6 @@
 [submodule "driverspace_workspace/drivers/iommu-TrangorgeOS"]
 	path = driverspace_workspace/drivers/iommu-TrangorgeOS
 	url = git@github.com:CTRL-F-0rg3/iommu-TrangorgeOS.git
+[submodule "cosmic-epoch-for-TrangorgeOS"]
+	path = cosmic-epoch-for-TrangorgeOS
+	url = git@github.com:CTRL-F-0rg3/cosmic-epoch-for-TrangorgeOS.git

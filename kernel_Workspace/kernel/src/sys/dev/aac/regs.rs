@@ -16,6 +16,11 @@ pub mod rx {
     pub const OQUE: u32 = 0x44; // Outbound Queue (tu "wyjmujemy" odpowiedzi)
     pub const MAILBOX: u32 = 0x50; // Mailbox (20 bytes)
     pub const FWSTATUS: u32 = 0x6c; // Firmware Status
+
+    // Queue table base pointer (64-bit address, written during adapter init).
+    // TODO: verify offsets against the Adaptec AAC register spec (aacraid aacreg.h).
+    pub const BASE_PTR_LO: u32 = 0x60;
+    pub const BASE_PTR_HI: u32 = 0x64;
 }
 
 pub const DB_SYNC_COMMAND: u32 = 1 << 0;
@@ -24,6 +29,14 @@ pub const DB_RESPONSE_READY: u32 = 1 << 2;
 pub const DB_COMMAND_NOT_FULL: u32 = 1 << 3;
 pub const DB_RESPONSE_NOT_FULL: u32 = 1 << 4;
 pub const DB_PRINTF: u32 = 1 << 5;
+
+// Init handshake doorbell bits (used by the adapter init sequence).
+// TODO: verify bit numbers against the Adaptec AAC register spec.
+pub const DB_INIT: u32 = 1 << 6;     // inbound: host asks the adapter to init
+pub const DB_INIT_ACK: u32 = 1 << 6; // outbound: adapter acknowledges init
+
+// Firmware status bits (read from the FWSTATUS register).
+pub const STS_UP_AND_RUNNING: u32 = 0x01; // firmware finished booting
 
 pub const DB_INTERRUPTS: u32 = DB_COMMAND_READY | DB_RESPONSE_READY | DB_PRINTF;
 

@@ -7,6 +7,9 @@
 #include "../alloc/heap/heap.h"
 #include "../arch/x86_64/tlb.h"
 #include "../core/range.h"
+
+void kprintf(const char *fmt, ...);
+
 static uint64_t paging_kernel_pml4 = 0;
 static bool paging_subsystem_ready = false;
 
@@ -74,6 +77,55 @@ static void free_tables(uint64_t table_phys, int level)
 	pmm_free_frame(table_phys);
 }
 
+/*
+ * Mark every intermediate (non-leaf) page-table entry in the shared low half
+ * as user-accessible. The kernel's identity map was built by the bootloader
+ * with supervisor-only intermediate tables, so a ring-3 page walk would fault
+ * on them before ever reaching the leaf PTEs the user mappings created (which
+ * do carry PTE_USER). Leaf entries — the large pages and the final PTEs — are
+ * left exactly as they are: their own USER bit is what gates the final access,
+ * so the kernel's identity-mapped pages stay supervisor-only.
+ */
+static void mark_intermediate_user(uint64_t pml4_phys)
+{
+	uint64_t *pml4 = pml_table_ptr(pml4_phys);
+
+	for (size_t i = 0; i < 256; i++) {
+	    uint64_t e = pml4[i];
+
+	    if (!pml_entry_present(e) || pml_entry_large(e)) {
+	        continue;
+	    }
+
+	    pml4[i] |= PTE_USER;
+
+	    uint64_t *pdpt = pml_table_ptr(pml_entry_addr(e));
+
+	    for (size_t j = 0; j < PML_ENTRIES; j++) {
+	        uint64_t pe = pdpt[j];
+
+	        if (!pml_entry_present(pe) || pml_entry_large(pe)) {
+	            continue;
+	        }
+
+	        pdpt[j] |= PTE_USER;
+
+	        uint64_t *pd = pml_table_ptr(pml_entry_addr(pe));
+
+	        for (size_t k = 0; k < PML_ENTRIES; k++) {
+	            uint64_t pde = pd[k];
+
+	            if (!pml_entry_present(pde) || pml_entry_large(pde)) {
+	                continue;
+	            }
+
+	            pd[k] |= PTE_USER;
+	        }
+	    }
+	}
+}
+
+
 address_space_t *paging_aspace_create(void)
 {
 	if (!paging_subsystem_ready) {
@@ -89,9 +141,23 @@ address_space_t *paging_aspace_create(void)
 	uint64_t *new_pml4 = pml_table_ptr(pml4_phys);
 	uint64_t *kernel_pml4 = pml_table_ptr(paging_kernel_pml4);
 
-	for (size_t i = 256; i < 512; i++) {
+	/*
+	 * Share the kernel's *whole* page table, not just the higher half.
+	 * The kernel is identity-mapped in the low half (the bootloader loads it
+	 * at physical 0x400000 with `IdentityMappedAddr`), so the ring-switch
+	 * trampoline (tr_restore_ctx, in the kernel's .text) is only reachable
+	 * after `write_cr3(user_pml4)` if the low half is mapped too. Copying only
+	 * entries 256..511 left the low half empty and the first switch to a user
+	 * address space unmapped the running kernel code.
+	 *
+	 * The ring-3 ELF is linked above the kernel image (see ustd/linker.ld) so
+	 * the user mappings never collide with these shared low-half entries.
+	 */
+	for (size_t i = 0; i < 512; i++) {
 	    new_pml4[i] = kernel_pml4[i];
 	}
+
+	mark_intermediate_user(pml4_phys);
 
 	address_space_t *as = (address_space_t *)heap_alloc(sizeof(address_space_t));
 
@@ -112,16 +178,13 @@ void paging_aspace_destroy(address_space_t *as)
 	    return;
 	}
 
-	uint64_t *pml4 = pml_table_ptr(as->pml4_phys);
-
-	for (size_t i = 0; i < 256; i++) {
-	    uint64_t e = pml4[i];
-
-	    if (pml_entry_present(e) && !pml_entry_large(e)) {
-	        free_tables(pml_entry_addr(e), PML_LEVEL_PDPT);
-	    }
-	}
-
+	/*
+	 * The low half of the PML4 is shared with the kernel (see
+	 * paging_aspace_create), so it must not be freed here: freeing the shared
+	 * PDPT/PD/PT would tear down the kernel's own identity map. The user's own
+	 * tables (created underneath the shared PDPT/PD for the ELF image and the
+	 * mmap regions) are not tracked separately and simply leak on destroy.
+	 */
 	pmm_free_frame(as->pml4_phys);
 
 	heap_free(as);
@@ -155,6 +218,9 @@ bool paging_aspace_map(address_space_t *as,
 	if (as == NULL || len == 0) {
 	    return false;
 	}
+
+	kprintf("[asmap] virt=0x%llx phys=0x%llx len=0x%zx prot=0x%x\n",
+	        (unsigned long long)virt, (unsigned long long)phys, len, prot);
 
 	if (!page_range_ok(virt, len) || !page_range_ok(phys, len)) {
 	    return false;

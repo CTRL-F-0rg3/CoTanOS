@@ -7,12 +7,12 @@
  * Layout (x86_64, non-PIE, loaded at the identity address the kernel's ELF
  * loader maps PT_LOAD segments into):
  *
- *   0x0040_0000  .text      the program itself
- *   0x0060_0000  .rodata
- *   0x0061_0000  .tdata / .tbss   (single-threaded: plain data, see README)
- *   0x0062_0000  .data / .bss      (std's globals, the malloc arena, errno)
+ *   0x0100_0000  .text      the program itself
+ *   0x0120_0000  .rodata
+ *   0x0121_0000  .tdata / .tbss   (single-threaded: plain data, see README)
+ *   0x0122_0000  .data / .bss      (std's globals, the malloc arena, errno)
  *
- * Everything above 0x0040_0000 is left free for `mmap`, so the heap can grow
+ * Everything above the image is left free for `mmap`, so the heap can grow
  * upwards without ever colliding with the image.
  */
 
@@ -22,8 +22,16 @@ SECTIONS
 {
     /* NOTE: no digit separators. `lld` parses this file with its own number
      * reader, not the C preprocessor, and it rejects Rust's `0x0040_0000`
-     * spelling with "malformed number". Hex digits only. */
-    . = 0x00400000;
+     * spelling with "malformed number". Hex digits only.
+     *
+     * The image is linked at 0x0100_0000 (16 MiB) so it sits *above* the
+     * kernel's identity-mapped range (the bootloader loads the kernel at
+     * 0x400000, see bootloader 0.9 `main.rs`). Both use the low half of the
+     * address space, and the kernel shares its whole page table with the user
+     * address space (kernel/src/mm/paging/paging.c), so a user image at
+     * 0x400000 would overwrite the kernel's own code mapping.
+     */
+    . = 0x01000000;
     _image_start = .;
 
     .text : ALIGN(4K)

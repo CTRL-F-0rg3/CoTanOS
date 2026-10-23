@@ -81,7 +81,7 @@ impl AddressSpace {
     }
 
     pub fn cr3(&self) -> u64 {
-        unsafe { ffi::paging_aspace_cr3(self.ptr) }
+        unsafe { ffi::paging_aspace_cr3(self.handle()) }
     }
     pub fn map_phys(&self, virt: u64, phys: u64, len: usize, prot: ProtFlags) -> bool {
         unsafe { ffi::paging_aspace_map(self.handle(), virt, phys, len, prot.bits()) }

@@ -107,7 +107,7 @@ fn user_copy_out(cr3: u64, dst: u64, src: &[u8]) -> bool {
 }
 
 /// The next anonymous mapping address the POSIX `mmap` hands out. It starts well
-/// above the ring-3 image (which ends around 0x0062_0000, see `ustd/linker.ld`)
+/// above the ring-3 image (which ends around 0x0122_0000, see `ustd/linker.ld`)
 /// and grows upward, so the heap can expand without colliding with the image.
 static mut MMAP_NEXT: u64 = 0x1000_0000;
 

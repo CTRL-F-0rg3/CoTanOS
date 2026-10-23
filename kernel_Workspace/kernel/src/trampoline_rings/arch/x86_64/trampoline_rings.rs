@@ -94,14 +94,19 @@ pub fn init() {
         let tss = &mut tr_tss_desc;
         let base = &tr_tss as *const _ as u64;
 
+        // 64-bit TSS descriptor (16 bytes = two 8-byte slots). The base is the
+        // *full* 64-bit linear address of `tr_tss`; masking it to 24 bits drops
+        // the top byte of the kernel's higher-half address (0xFFFF_FFFF_80…),
+        // which makes the base non-canonical. Reading TSS.RSP0 on the first
+        // ring-3 -> ring-0 syscall then faults and triple-faults the machine.
         let mut d0: u64 = 0;
-        d0 |= (base & 0xFFFF) << 16;
-        d0 |= ((base >> 16) & 0xFF) << 32;
-        d0 |= 0x89 << 40;
-        d0 |= ((base >> 24) & 0xFF) << 56;
+        d0 |= 0x67;                              // limit[15:0] = 103 (104-byte TSS - 1)
+        d0 |= (base & 0xFFFF) << 16;             // base[15:0]
+        d0 |= ((base >> 16) & 0xFF) << 32;       // base[23:16]
+        d0 |= 0x89 << 40;                        // access: P=1, DPL=0, 64-bit available TSS
+        d0 |= ((base >> 24) & 0xFF) << 56;       // base[31:24]
 
-        let mut d1: u64 = (base >> 32) & 0xFF_FFFF;
-        d1 |= 103 << 32;
+        let mut d1: u64 = (base >> 32) & 0xFFFF_FFFF; // base[63:32] (full 32 bits, no truncation)
 
         tss[0] = d0;
         tss[1] = d1;
@@ -185,6 +190,38 @@ pub fn start() -> ! {
 
         let w = WORLDS[next].as_mut().unwrap();
 
+        extern "C" { fn kprintf(fmt: *const u8, ...); }
+        kprintf(b"[start] next=%d cr3=0x%x rip=0x%x rsp=0x%x cs=0x%x ss=0x%x\n\0".as_ptr(),
+                next as u32, w.cr3, w.ctx.rip, w.ctx.rsp, w.ctx.cs, w.ctx.ss);
+
+        extern "C" { fn paging_translate_in(pml4: u64, virt: u64) -> u64; }
+        let t_text = paging_translate_in(w.cr3, 0x1000000);
+        let t_stack = paging_translate_in(w.cr3, 0x7FFEFFFFF000);
+        kprintf(b"[start] translate text=0x%x stack=0x%x\n\0".as_ptr(), t_text, t_stack);
+
+        let up = crate::mm::phys::phys_to_virt(w.cr3) as *const u64;
+        kprintf(b"[start] upml4[0]=0x%x upml4[255]=0x%x\n\0".as_ptr(), *up, *up.add(255));
+
+        let pdpt_phys = *up.add(255) & 0x000FFFFFFFFFF000u64;
+        let pdpt = crate::mm::phys::phys_to_virt(pdpt_phys) as *const u64;
+        let pdpt_idx = ((0x7FFEFFFFF000u64 >> 30) & 0x1FF) as usize;
+        let pd_phys = *pdpt.add(pdpt_idx) & 0x000FFFFFFFFFF000u64;
+        kprintf(b"[start] pdpt_idx=%d pdpt[%d]=0x%x\n\0".as_ptr(),
+                pdpt_idx as u32, pdpt_idx as u32, *pdpt.add(pdpt_idx));
+
+        let pd_idx = ((0x7FFEFFFFF000u64 >> 21) & 0x1FF) as usize;
+        let pt_idx = ((0x7FFEFFFFF000u64 >> 12) & 0x1FF) as usize;
+        if pd_phys != 0 {
+            let pd = crate::mm::phys::phys_to_virt(pd_phys) as *const u64;
+            let pt_phys = *pd.add(pd_idx) & 0x000FFFFFFFFFF000u64;
+            kprintf(b"[start] pd_idx=%d pd[%d]=0x%x pt_idx=%d\n\0".as_ptr(),
+                    pd_idx as u32, pd_idx as u32, *pd.add(pd_idx), pt_idx as u32);
+            if pt_phys != 0 {
+                let pt = crate::mm::phys::phys_to_virt(pt_phys) as *const u64;
+                kprintf(b"[start] pt[%d]=0x%x\n\0".as_ptr(), pt_idx as u32, *pt.add(pt_idx));
+            }
+        }
+
         write_cr3(w.cr3);
         tr_restore_ctx(&mut w.ctx);
     }
@@ -214,6 +251,14 @@ extern "C" fn tr_hyper(ctx: *mut CpuCtx) {
     unsafe {
         let c = &mut *ctx;
         let cur = CURRENT.unwrap();
+
+        static mut DEBUG_SEEN: u32 = 0;
+        if DEBUG_SEEN < 8 {
+            extern "C" { fn kprintf(fmt: *const u8, ...); }
+            kprintf(b"[tr_hyper] syscall rax=0x%x rdi=0x%x rsi=0x%x rdx=0x%x\n\0".as_ptr(),
+                    c.rax, c.rdi, c.rsi, c.rdx);
+            DEBUG_SEEN += 1;
+        }
 
         match c.rax {
             HYPER_YIELD => {
