@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    ".", "crates/loomos-api", "crates/loomos-blend", "crates/loomos-core", "crates/loomos-cpp-bridge", "crates/loomos-cpu", "crates/loomos-geom", "crates/loomos-scale", "crates/loomos-surface",
+]
+resolver = "2"
+
+[package]
+name = "loomcos"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[workspace.dependencies]

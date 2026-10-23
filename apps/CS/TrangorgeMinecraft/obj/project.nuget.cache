@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "dgSpecHash": "Js7JB+sC8sc=",
+  "success": true,
+  "projectFilePath": "/home/ctrl/TrangorgeOS/apps/CS/TrangorgeMinecraft/TrangorgeMinecraft.csproj",
+  "expectedPackageFiles": [
+    "/home/ctrl/.nuget/packages/opentk/4.8.2/opentk.4.8.2.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/opentk.audio.openal/4.8.2/opentk.audio.openal.4.8.2.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/opentk.compute/4.8.2/opentk.compute.4.8.2.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/opentk.core/4.8.2/opentk.core.4.8.2.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/opentk.graphics/4.8.2/opentk.graphics.4.8.2.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/opentk.input/4.8.2/opentk.input.4.8.2.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/opentk.mathematics/4.8.2/opentk.mathematics.4.8.2.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/opentk.redist.glfw/3.3.8.39/opentk.redist.glfw.3.3.8.39.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/opentk.windowing.common/4.8.2/opentk.windowing.common.4.8.2.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/opentk.windowing.desktop/4.8.2/opentk.windowing.desktop.4.8.2.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/opentk.windowing.graphicslibraryframework/4.8.2/opentk.windowing.graphicslibraryframework.4.8.2.nupkg.sha512",
+    "/home/ctrl/.nuget/packages/microsoft.aspnetcore.app.ref/10.0.11/microsoft.aspnetcore.app.ref.10.0.11.nupkg.sha512"
+  ],
+  "logs": []
+}
