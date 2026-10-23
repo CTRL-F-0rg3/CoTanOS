@@ -247,15 +247,15 @@ impl AacController {
     }
 
     fn handshake(&mut self, io: &mut dyn KernelIo) -> Result<()> {
-        self.wait_bit(io, rx::FW_STATUS, rx::STS_UP_AND_RUNNING)?;
+        self.wait_bit(io, rx::FWSTATUS, regs::STS_UP_AND_RUNNING)?;
 
         self.regs.write(rx::BASE_PTR_LO, self.qtab.phys as u32);
         self.regs.write(rx::BASE_PTR_HI, (self.qtab.phys >> 32) as u32);
 
-        self.regs.write(rx::INBOUND_DOORBELL, rx::DB_INIT);
-        self.wait_bit(io, rx::OUTBOUND_DOORBELL, rx::DB_INIT_ACK)?;
+        self.regs.write(rx::IDBR, regs::DB_INIT);
+        self.wait_bit(io, rx::ODBR, regs::DB_INIT_ACK)?;
 
-        self.regs.write(rx::OUT_INTR_MASK, 0);
+        self.regs.write(rx::OIMR, 0);
         Ok(())
     }
 
@@ -308,7 +308,7 @@ impl AacController {
 
         self.qt().q_index[SUBMIT][queues::PRODUCER] = ((prod + 1) % count) as u32;
         fence(Ordering::SeqCst);
-        self.regs.write(rx::INBOUND_DOORBELL, rx::DB_COMMAND_READY);
+        self.regs.write(rx::IDBR, regs::DB_COMMAND_READY);
     }
 
     fn reap_one(&mut self) -> Option<usize> {
@@ -350,21 +350,21 @@ impl AacController {
     // -----------------------------------------------------------------------
 
     pub fn on_interrupt(&mut self, io: &mut dyn KernelIo) {
-        let db = self.regs.read(rx::OUTBOUND_DOORBELL);
+        let db = self.regs.read(rx::ODBR);
         if db == 0 {
             return;
         }
 
-        if db & rx::DB_RESPONSE_READY != 0 {
+        if db & regs::DB_RESPONSE_READY != 0 {
             while let Some(idx) = self.reap_one() {
                 self.complete(idx);
             }
-            self.regs.write(rx::OUTBOUND_DOORBELL, rx::DB_RESPONSE_READY);
+            self.regs.write(rx::ODBR, regs::DB_RESPONSE_READY);
         }
 
-        if db & rx::DB_PRINTF != 0 {
+        if db & regs::DB_PRINTF != 0 {
             self.drain_firmware_printf(io);
-            self.regs.write(rx::OUTBOUND_DOORBELL, rx::DB_PRINTF);
+            self.regs.write(rx::ODBR, regs::DB_PRINTF);
         }
     }
 
