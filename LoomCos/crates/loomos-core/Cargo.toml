@@ -1,0 +1,12 @@
+[package]
+name = "loomcos-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Zależności wewnętrzne workspace (np. geometria, CPU renderer)
+# loomcos-geom = { path = "../loomcos-geom" }
+# loomcos-cpu = { path = "../loomcos-cpu" }
+
+[build-dependencies]
+cc = "1.0"
