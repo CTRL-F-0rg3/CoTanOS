@@ -47,4 +47,12 @@ impl SceneGraph {
     pub fn active_surfaces(&self) -> impl Iterator<Item = &Surface> {
         self.surfaces.iter().filter(|s| s.visible)
     }
+
+    pub fn bring_to_front(&mut self, id: SurfaceId) {
+        if let Some(surface) = self.surfaces.iter_mut().find(|s| s.id == id) {
+            let max_z = self.surfaces.iter().map(|s| s.z_index).max().unwrap_or(0);
+            surface.z_index = max_z + 1;
+            self.sort_z_order();
+        }
+    }
 }

@@ -198,6 +198,10 @@ impl Rect {
     }
 }
 
+use crate::shm::ShmPool;
+
+// ... (Rect, SurfaceRole, SurfaceId bez zmian) ...
+
 pub struct Surface {
     pub id: SurfaceId,
     pub role: SurfaceRole,
@@ -205,14 +209,27 @@ pub struct Surface {
     pub z_index: i32,
     pub visible: bool,
     pub alpha: u8,
-    pub buffer: Vec<u32>,
-    /// Optional parent window ID if this surface is a decoration or popup attached to a window
+    
+    // Replaced Vec<u32> with SHM Pool for Zero-Copy IPC
+    pub shm_pool: ShmPool, 
+    
     pub parent_id: Option<SurfaceId>,
+    
+    // Visual effects
+    pub blur_radius: i32, 
+    pub titlebar_height: i32,
+    pub border_width: i32,
 }
 
 impl Surface {
     pub fn new(id: SurfaceId, role: SurfaceRole, x: i32, y: i32, width: i32, height: i32) -> Self {
-        let size = (width * height) as usize;
+        let pixel_count = (width * height) as usize;
+        let shm_name = format!("/loomcos_surf_{}", id.0);
+        
+        // Allocate SHM. Panics on OOM, which is fine for OS core.
+        let shm_pool = ShmPool::create(&shm_name, pixel_count)
+            .expect("Failed to allocate SHM for surface");
+
         Self {
             id,
             role,
@@ -220,16 +237,11 @@ impl Surface {
             z_index: 0,
             visible: true,
             alpha: 255,
-            buffer: vec![0; size],
+            shm_pool,
             parent_id: None,
+            blur_radius: 0,
+            titlebar_height: 28,
+            border_width: 4,
         }
-    }
-
-    pub fn update_buffer(&mut self, new_pixels: &[u32]) -> Result<(), &'static str> {
-        if new_pixels.len() != self.buffer.len() {
-            return Err("Buffer size mismatch");
-        }
-        self.buffer.copy_from_slice(new_pixels);
-        Ok(())
     }
 }
