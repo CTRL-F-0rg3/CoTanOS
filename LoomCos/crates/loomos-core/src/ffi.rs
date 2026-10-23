@@ -1,5 +1,4 @@
 // crates/loomcos-core/src/ffi.rs
-
 use std::os::raw::c_int;
 
 #[repr(C)]
@@ -12,42 +11,22 @@ pub struct LoomcosRect {
 }
 
 extern "C" {
-    // Existing render helpers
-    pub fn loomcos_cpu_blit_clipped(
-        dest: *mut u32,
-        dest_w: c_int,
-        dest_h: c_int,
-        src: *const u32,
-        src_w: c_int,
-        src_h: c_int,
-        pos_x: c_int,
-        pos_y: c_int,
-        clip: *const LoomcosRect,
-    );
-
-    // New Alpha Blending functions from alpha_blend.cpp
     pub fn loomcos_cpu_blend_surface(
-        dest: *mut u32,
-        dest_w: c_int,
-        dest_h: c_int,
-        src: *const u32,
-        src_w: c_int,
-        src_h: c_int,
-        pos_x: c_int,
-        pos_y: c_int,
-        global_alpha: u8,
+        dest: *mut u32, dest_w: c_int, dest_h: c_int,
+        src: *const u32, src_w: c_int, src_h: c_int,
+        pos_x: c_int, pos_y: c_int, global_alpha: u8,
     );
 
     pub fn loomcos_cpu_blend_selective(
-        dest: *mut u32,
-        dest_w: c_int,
-        dest_h: c_int,
-        src: *const u32,
-        src_w: c_int,
-        src_h: c_int,
-        pos_x: c_int,
-        pos_y: c_int,
-        color_key: u32,
-        alpha_threshold: u8,
+        dest: *mut u32, dest_w: c_int, dest_h: c_int,
+        src: *const u32, src_w: c_int, src_h: c_int,
+        pos_x: c_int, pos_y: c_int, color_key: u32, alpha_threshold: u8,
+    );
+
+    // Added: Clear specific regions with a solid color
+    pub fn loom_cpu_fill_solid_rect(
+        dest: *mut u32, dest_w: c_int, dest_h: c_int,
+        rect_x: c_int, rect_y: c_int, rect_w: c_int, rect_h: c_int,
+        color: u32,
     );
 }

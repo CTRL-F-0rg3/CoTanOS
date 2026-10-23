@@ -1,0 +1,2442 @@
+Ścieżka: ./build.rs
+Kod:
+// crates/loomcos-core/build.rs
+fn main() {
+    cc::Build::new()
+        .cpp(true)
+        .file("cpp/render_helper.cpp")
+        .file("cpp/alpha_blend.cpp")
+        .file("cpp/window_class.cpp")
+        .file("cpp/window_runtime.cpp")
+        .file("cpp/vector_scene.cpp")
+        .file("cpp/color_utils.cpp")
+        .file("cpp/effects_renderer.cpp")
+        .file("cpp/diff_renderer.cpp")
+        .file("cpp/area_restore.cpp")
+        .file("cpp/animation_engine.cpp") // Smooth interpolation & easing animation engine
+        .include("include")
+        .opt_level(3)
+        .compile("loomcos_cpp_helper");
+
+    println!("cargo:rerun-if-changed=cpp/animation_engine.cpp");
+    println!("cargo:rerun-if-changed=include/loomcos_anim.h");
+}
+========================================
+
+Ścieżka: ./Cargo.toml
+Kod:
+[package]
+name = "loomcos-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Zależności wewnętrzne workspace (np. geometria, CPU renderer)
+# loomcos-geom = { path = "../loomcos-geom" }
+# loomcos-cpu = { path = "../loomcos-cpu" }
+
+[build-dependencies]
+cc = "1.0"
+========================================
+
+Ścieżka: ./code.txt
+Kod:
+
+========================================
+
+Ścieżka: ./cpp/alpha_blend.cpp
+Kod:
+#include "loomcos_alpha.h"
+#include <algorithm>
+
+extern "C" {
+
+// Fast per-pixel ARGB alpha blending
+void loomcos_cpu_blend_surface(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const uint32_t* src,
+    int32_t src_w,
+    int32_t src_h,
+    int32_t pos_x,
+    int32_t pos_y,
+    uint8_t global_alpha
+) {
+    if (!dest || !src || dest_w <= 0 || dest_h <= 0 || src_w <= 0 || src_h <= 0) return;
+
+    int32_t start_x = std::max(0, pos_x);
+    int32_t start_y = std::max(0, pos_y);
+    int32_t end_x = std::min(dest_w, pos_x + src_w);
+    int32_t end_y = std::min(dest_h, pos_y + src_h);
+
+    if (start_x >= end_x || start_y >= end_y) return;
+
+    for (int y = start_y; y < end_y; ++y) {
+        int32_t src_y = y - pos_y;
+        int32_t src_x_offset = start_x - pos_x;
+
+        uint32_t* dest_row = dest + (y * dest_w + start_x);
+        const uint32_t* src_row = src + (src_y * src_w + src_x_offset);
+
+        for (int x = 0; x < (end_x - start_x); ++x) {
+            uint32_t s_pixel = src_row[x];
+            
+            // Extract source channels (Assuming ARGB: A: 24-31, R: 16-23, G: 8-15, B: 0-7)
+            uint8_t s_a = ((s_pixel >> 24) & 0xFF);
+            
+            // Apply global surface alpha scaling factor
+            if (global_alpha < 255) {
+                s_a = (s_a * global_alpha) / 255;
+            }
+
+            if (s_a == 0) continue; // Fully transparent pixel, skip
+
+            if (s_a == 255) {
+                dest_row[x] = s_pixel; // Fully opaque, direct overwrite
+            } else {
+                // Standard alpha blending (Over operator)
+                uint32_t d_pixel = dest_row[x];
+
+                uint8_t s_r = (s_pixel >> 16) & 0xFF;
+                uint8_t s_g = (s_pixel >> 8) & 0xFF;
+                uint8_t s_b = s_pixel & 0xFF;
+
+                uint8_t d_r = (d_pixel >> 16) & 0xFF;
+                uint8_t d_g = (d_pixel >> 8) & 0xFF;
+                uint8_t d_b = d_pixel & 0xFF;
+
+                // Precomputed division by 255 approximation or standard math
+                uint8_t r = (s_r * s_a + d_r * (255 - s_a)) / 255;
+                uint8_t g = (s_g * s_a + d_g * (255 - s_a)) / 255;
+                uint8_t b = (s_b * s_a + d_b * (255 - s_a)) / 255;
+
+                // Reconstruct destination pixel (keeping destination alpha or setting to opaque)
+                dest_row[x] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+}
+
+// Selective alpha blending with color-keying and alpha thresholding
+void loomcos_cpu_blend_selective(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const uint32_t* src,
+    int32_t src_w,
+    int32_t src_h,
+    int32_t pos_x,
+    int32_t pos_y,
+    uint32_t color_key,
+    uint8_t alpha_threshold
+) {
+    if (!dest || !src || dest_w <= 0 || dest_h <= 0) return;
+
+    int32_t start_x = std::max(0, pos_x);
+    int32_t start_y = std::max(0, pos_y);
+    int32_t end_x = std::min(dest_w, pos_x + src_w);
+    int32_t end_y = std::min(dest_h, pos_y + src_h);
+
+    if (start_x >= end_x || start_y >= end_y) return;
+
+    for (int y = start_y; y < end_y; ++y) {
+        int32_t src_y = y - pos_y;
+        int32_t src_x_offset = start_x - pos_x;
+
+        uint32_t* dest_row = dest + (y * dest_w + start_x);
+        const uint32_t* src_row = src + (src_y * src_w + src_x_offset);
+
+        for (int x = 0; x < (end_x - start_x); ++x) {
+            uint32_t s_pixel = src_row[x];
+
+            // Color key check (ignore specific background color completely)
+            if ((s_pixel & 0x00FFFFFF) == (color_key & 0x00FFFFFF)) {
+                continue;
+            }
+
+            uint8_t s_a = (s_pixel >> 24) & 0xFF;
+
+            // Selective alpha thresholding (sharp cutoff for retro / masked assets)
+            if (s_a < alpha_threshold) {
+                continue;
+            }
+
+            if (s_a >= 255) {
+                dest_row[x] = s_pixel;
+            } else {
+                // Fallback to standard blend for partial alpha values above threshold
+                uint32_t d_pixel = dest_row[x];
+                uint8_t s_r = (s_pixel >> 16) & 0xFF;
+                uint8_t s_g = (s_pixel >> 8) & 0xFF;
+                uint8_t s_b = s_pixel & 0xFF;
+
+                uint8_t d_r = (d_pixel >> 16) & 0xFF;
+                uint8_t d_g = (d_pixel >> 8) & 0xFF;
+                uint8_t d_b = d_pixel & 0xFF;
+
+                uint8_t r = (s_r * s_a + d_r * (255 - s_a)) / 255;
+                uint8_t g = (s_g * s_a + d_g * (255 - s_a)) / 255;
+                uint8_t b = (s_b * s_a + d_b * (255 - s_a)) / 255;
+
+                dest_row[x] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+}
+
+}
+========================================
+
+Ścieżka: ./cpp/animation_engine.cpp
+Kod:
+#include "loomcos_anim.h"
+#include <algorithm>
+#include <cmath>
+
+// Internal Animation structure supporting various interpolation targets
+struct LoomAnimationInstance {
+    bool is_rect_type;
+    uint32_t current_frame;
+    uint32_t total_frames;
+    LoomEaseType ease_type;
+
+    // Rect-based targets (position, bounds)
+    LoomAnimRect start_rect;
+    LoomAnimRect target_rect;
+
+    // Float-based targets (opacity, scale)
+    float start_float;
+    float target_float;
+};
+
+// Easing function math implementation
+static float apply_easing(float t, LoomEaseType type) {
+    t = std::clamp(t, 0.0f, 1.0f);
+    switch (type) {
+        case LOOM_EASE_IN:
+            return t * t; // Quadratic acceleration
+        case LOOM_EASE_OUT:
+            return t * (2.0f - t); // Quadratic deceleration
+        case LOOM_EASE_IN_OUT:
+            return t < 0.5f ? 2.0f * t * t : -1.0f + (4.0f - 2.0f * t) * t;
+        case LOOM_EASE_LINEAR:
+        default:
+            return t;
+    }
+}
+
+extern "C" {
+
+LoomAnimationHandle loom_anim_create_rect(
+    LoomAnimRect start_val, 
+    LoomAnimRect target_val, 
+    uint32_t duration_frames, 
+    LoomEaseType ease
+) {
+    auto anim = new LoomAnimationInstance();
+    anim->is_rect_type = true;
+    anim->current_frame = 0;
+    anim->total_frames = std::max(1u, duration_frames);
+    anim->ease_type = ease;
+    anim->start_rect = start_val;
+    anim->target_rect = target_val;
+    return reinterpret_cast<LoomAnimationHandle>(anim);
+}
+
+LoomAnimationHandle loom_anim_create_float(
+    float start_val, 
+    float target_val, 
+    uint32_t duration_frames, 
+    LoomEaseType ease
+) {
+    auto anim = new LoomAnimationInstance();
+    anim->is_rect_type = false;
+    anim->current_frame = 0;
+    anim->total_frames = std::max(1u, duration_frames);
+    anim->ease_type = ease;
+    anim->start_float = start_val;
+    anim->target_float = target_val;
+    return reinterpret_cast<LoomAnimationHandle>(anim);
+}
+
+void loom_anim_destroy(LoomAnimationHandle anim) {
+    if (anim) {
+        delete reinterpret_cast<LoomAnimationInstance*>(anim);
+    }
+}
+
+bool loom_anim_step_rect(LoomAnimationHandle anim, LoomAnimRect* out_current_val) {
+    if (!anim || !out_current_val) return false;
+    auto a = reinterpret_cast<LoomAnimationInstance*>(anim);
+
+    if (a->current_frame > a->total_frames) {
+        return false; // Animation completed
+    }
+
+    float progress = static_cast<float>(a->current_frame) / static_cast<float>(a->total_frames);
+    float factor = apply_easing(progress, a->ease_type);
+
+    out_current_val->x = static_cast<int32_t>(a->start_rect.x + factor * (a->target_rect.x - a->start_rect.x));
+    out_current_val->y = static_cast<int32_t>(a->start_rect.y + factor * (a->target_rect.y - a->start_rect.y));
+    out_current_val->width = static_cast<int32_t>(a->start_rect.width + factor * (a->target_rect.width - a->start_rect.width));
+    out_current_val->height = static_cast<int32_t>(a->start_rect.height + factor * (a->target_rect.height - a->start_rect.height));
+
+    a->current_frame++;
+    return true;
+}
+
+bool loom_anim_step_float(LoomAnimationHandle anim, float* out_current_val) {
+    if (!anim || !out_current_val) return false;
+    auto a = reinterpret_cast<LoomAnimationInstance*>(anim);
+
+    if (a->current_frame > a->total_frames) {
+        return false;
+    }
+
+    float progress = static_cast<float>(a->current_frame) / static_cast<float>(a->total_frames);
+    float factor = apply_easing(progress, a->ease_type);
+
+    *out_current_val = a->start_float + factor * (a->target_float - a->start_float);
+
+    a->current_frame++;
+    return true;
+}
+
+bool loom_anim_is_finished(LoomAnimationHandle anim) {
+    if (!anim) return true;
+    auto a = reinterpret_cast<LoomAnimationInstance*>(anim);
+    return a->current_frame > a->total_frames;
+}
+
+}
+========================================
+
+Ścieżka: ./cpp/area_restore.cpp
+Kod:
+#include "loomcos_restore.h"
+#include <algorithm>
+#include <cstring>
+
+extern "C" {
+
+void loom_cpu_repair_exposed_region(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const LoomExposedRegion* region,
+    uint32_t background_color
+) {
+    if (!dest || !region || dest_w <= 0 || dest_h <= 0 || region->width <= 0 || region->height <= 0) {
+        return;
+    }
+
+    // Clip region bounds strictly to physical screen limits
+    int32_t start_x = std::max(0, region->x);
+    int32_t start_y = std::max(0, region->y);
+    int32_t end_x = std::min(dest_w, region->x + region->width);
+    int32_t end_y = std::min(dest_h, region->y + region->height);
+
+    if (start_x >= end_x || start_y >= end_y) return;
+
+    // Fast row-by-row background restoration for the exposed hole
+    for (int32_t y = start_y; y < end_y; ++y) {
+        uint32_t* row = dest + (y * dest_w + start_x);
+        int32_t width = end_x - start_x;
+
+        for (int32_t x = 0; x < width; ++x) {
+            row[x] = background_color;
+        }
+    }
+}
+
+void loom_cpu_purge_window_ghost(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    int32_t win_x,
+    int32_t win_y,
+    int32_t win_w,
+    int32_t win_h,
+    uint32_t fill_color
+) {
+    if (!dest || dest_w <= 0 || dest_h <= 0 || win_w <= 0 || win_h <= 0) return;
+
+    LoomExposedRegion region;
+    region.x = win_x;
+    region.y = win_y;
+    region.width = win_w;
+    region.height = win_h;
+
+    // Re-use the high-speed repair pipeline to completely wipe destroyed window remnants
+    loom_cpu_repair_exposed_region(dest, dest_w, dest_h, &region, fill_color);
+}
+
+}
+========================================
+
+Ścieżka: ./cpp/color_utils.cpp
+Kod:
+#include "loomcos_color.h"
+#include <algorithm>
+#include <cstring>
+
+// Helper to parse a single hex character to its integer value
+static uint8_t hex_char_to_int(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return 0;
+}
+
+extern "C" {
+
+uint32_t loom_color_from_hex(const char* hex_str) {
+    if (!hex_str) return 0xFF000000; // Default opaque black on error
+
+    // Skip leading '#' if present
+    if (hex_str[0] == '#') {
+        hex_str++;
+    }
+
+    size_t len = std::strlen(hex_str);
+    uint32_t r = 0, g = 0, b = 0, a = 255;
+
+    if (len == 6) {
+        // Format: RRGGBB (assumes full opacity alpha 0xFF)
+        r = (hex_char_to_int(hex_str[0]) << 4) | hex_char_to_int(hex_str[1]);
+        g = (hex_char_to_int(hex_str[2]) << 4) | hex_char_to_int(hex_str[3]);
+        b = (hex_char_to_int(hex_str[4]) << 4) | hex_char_to_int(hex_str[5]);
+    } else if (len == 8) {
+        // Format: AARRGGBB or RRGGBBAA (standard ARGB mapping here)
+        a = (hex_char_to_int(hex_str[0]) << 4) | hex_char_to_int(hex_str[1]);
+        r = (hex_char_to_int(hex_str[2]) << 4) | hex_char_to_int(hex_str[3]);
+        g = (hex_char_to_int(hex_str[4]) << 4) | hex_char_to_int(hex_str[5]);
+        b = (hex_char_to_int(hex_str[6]) << 4) | hex_char_to_int(hex_str[7]);
+    }
+
+    return (a << 24) | (r << 16) | (g << 8) | b;
+}
+
+uint32_t loom_color_from_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    return (static_cast<uint32_t>(a) << 24) |
+           (static_cast<uint32_t>(r) << 16) |
+           (static_cast<uint32_t>(g) << 8)  |
+           static_cast<uint32_t>(b);
+}
+
+void loom_color_to_rgba(uint32_t color, LoomColorRGB* out_rgb) {
+    if (!out_rgb) return;
+    out_rgb->a = (color >> 24) & 0xFF;
+    out_rgb->r = (color >> 16) & 0xFF;
+    out_rgb->g = (color >> 8) & 0xFF;
+    out_rgb->b = color & 0xFF;
+}
+
+void loom_cpu_fill_solid_rect(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    int32_t rect_x,
+    int32_t rect_y,
+    int32_t rect_w,
+    int32_t rect_h,
+    uint32_t color
+) {
+    if (!dest || dest_w <= 0 || dest_h <= 0 || rect_w <= 0 || rect_h <= 0) return;
+
+    // Clip rectangle to target screen bounds
+    int32_t start_x = std::max(0, rect_x);
+    int32_t start_y = std::max(0, rect_y);
+    int32_t end_x = std::min(dest_w, rect_x + rect_w);
+    int32_t end_y = std::min(dest_h, rect_y + rect_h);
+
+    if (start_x >= end_x || start_y >= end_y) return;
+
+    // Fast memory row filling
+    for (int32_t y = start_y; y < end_y; ++y) {
+        uint32_t* row = dest + (y * dest_w + start_x);
+        int32_t width = end_x - start_x;
+
+        for (int32_t x = 0; x < width; ++x) {
+            row[x] = color;
+        }
+    }
+}
+
+}
+========================================
+
+Ścieżka: ./cpp/diff_renderer.cpp
+Kod:
+#include "loomcos_diff.h"
+#include <algorithm>
+#include <cstring>
+
+extern "C" {
+
+void loom_cpu_blit_differential(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const uint32_t* src_new,
+    const uint32_t* src_old,
+    int32_t src_w,
+    int32_t src_h,
+    int32_t pos_x,
+    int32_t pos_y
+) {
+    if (!dest || !src_new || !src_old || dest_w <= 0 || dest_h <= 0 || src_w <= 0 || src_h <= 0) {
+        return;
+    }
+
+    // Clip target boundaries to screen dimensions
+    int32_t start_x = std::max(0, pos_x);
+    int32_t start_y = std::max(0, pos_y);
+    int32_t end_x = std::min(dest_w, pos_x + src_w);
+    int32_t end_y = std::min(dest_h, pos_y + src_h);
+
+    if (start_x >= end_x || start_y >= end_y) return;
+
+    size_t row_bytes = (end_x - start_x) * sizeof(uint32_t);
+
+    for (int32_t y = start_y; y < end_y; ++y) {
+        int32_t src_y = y - pos_y;
+        int32_t src_x_offset = start_x - pos_x;
+
+        const uint32_t* new_row = src_new + (src_y * src_w + src_x_offset);
+        const uint32_t* old_row = src_old + (src_y * src_w + src_x_offset);
+
+        // FAST ROW-LEVEL CHECK: If the entire row is identical to the previous frame, skip it instantly!
+        if (std::memcmp(new_row, old_row, row_bytes) == 0) {
+            continue; 
+        }
+
+        uint32_t* dest_row = dest + (y * dest_w + start_x);
+
+        // If the row changed, update only the specific pixels that differ
+        for (int32_t x = 0; x < (end_x - start_x); ++x) {
+            uint32_t pixel_new = new_row[x];
+            uint32_t pixel_old = old_row[x];
+
+            // Selective pixel update: only touch destination if the pixel actually changed
+            if (pixel_new != pixel_old) {
+                // Handle basic alpha blending or direct copy based on alpha channel
+                uint8_t alpha = (pixel_new >> 24) & 0xFF;
+
+                if (alpha == 255) {
+                    dest_row[x] = pixel_new;
+                } else if (alpha > 0) {
+                    // Simple blend fallback for partial transparency
+                    uint32_t bg = dest_row[x];
+                    uint8_t s_r = (pixel_new >> 16) & 0xFF;
+                    uint8_t s_g = (pixel_new >> 8) & 0xFF;
+                    uint8_t s_b = pixel_new & 0xFF;
+                    uint8_t d_r = (bg >> 16) & 0xFF;
+                    uint8_t d_g = (bg >> 8) & 0xFF;
+                    uint8_t d_b = bg & 0xFF;
+
+                    uint8_t r = (s_r * alpha + d_r * (255 - alpha)) / 255;
+                    uint8_t g = (s_g * alpha + d_g * (255 - alpha)) / 255;
+                    uint8_t b = (s_b * alpha + d_b * (255 - alpha)) / 255;
+
+                    dest_row[x] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+                }
+            }
+        }
+    }
+}
+
+}
+========================================
+
+Ścieżka: ./cpp/effects_render.cpp
+Kod:
+#include "loomcos_effects.h"
+#include <algorithm>
+#include <cmath>
+#include <vector>
+#include <cstring>
+
+// Internal Static Widget representation
+struct LoomStaticWidget {
+    int32_t width;
+    int32_t height;
+    std::vector<uint32_t> buffer;
+    bool dirty;
+
+    LoomStaticWidget(int w, int h) : width(w), height(h), buffer(w * h, 0), dirty(true) {}
+};
+
+// Helper for linear interpolation between two colors
+static uint32_t interpolate_color(uint32_t c1, uint32_t c2, float t) {
+    t = std::clamp(t, 0.0f, 1.0f);
+    
+    uint8_t a1 = (c1 >> 24) & 0xFF, r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF;
+    uint8_t a2 = (c2 >> 24) & 0xFF, r2 = (c2 >> 16) & 0xFF, g2 = (c2 >> 8) & 0xFF, b2 = c2 & 0xFF;
+
+    uint8_t a = static_cast<uint8_t>(a1 + t * (a2 - a1));
+    uint8_t r = static_cast<uint8_t>(r1 + t * (r2 - r1));
+    uint8_t g = static_cast<uint8_t>(g1 + t * (g2 - g1));
+    uint8_t b = static_cast<uint8_t>(b1 + t * (b2 - b1));
+
+    return (a << 24) | (r << 16) | (g << 8) | b;
+}
+
+extern "C" {
+
+void loom_render_styled_box_single_pass(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const LoomBoxStyle* style
+) {
+    if (!dest || !style || dest_w <= 0 || dest_h <= 0 || style->width <= 0.0f || style->height <= 0.0f) {
+        return;
+    }
+
+    // Bounding box estimation including potential shadow padding
+    float expand = style->has_shadow ? style->shadow_blur + std::max(std::abs(style->shadow_offset_x), std::abs(style->shadow_offset_y)) : 0.0f;
+    
+    int32_t min_x = std::max(0, static_cast<int32_t>(style->x - expand));
+    int32_t min_y = std::max(0, static_cast<int32_t>(style->y - expand));
+    int32_t max_x = std::min(dest_w, static_cast<int32_t>(style->x + style->width + expand));
+    int32_t max_y = std::min(dest_h, static_cast<int32_t>(style->y + style->height + expand));
+
+    float rx = style->x;
+    float ry = style->y;
+    float rw = style->width;
+    float rh = style->height;
+    float radius = std::max(0.0f, style->corner_radius);
+    float bw = std::max(0.0f, style->border_width);
+
+    // Single-pass per-pixel evaluation (Zero Overdraw Loop)
+    for (int32_t py = min_y; py < max_y; ++py) {
+        uint32_t* row = dest + (py * dest_w);
+        float fy = static_cast<float>(py);
+
+        for (int32_t px = min_x; px < max_x; ++px) {
+            float fx = static_cast<float>(px);
+
+            // 1. Optional Shadow Pass Calculation
+            if (style->has_shadow) {
+                float sx = fx - (rx + style->shadow_offset_x);
+                float sy = fy - (ry + style->shadow_offset_y);
+                // Simple soft shadow distance field approximation
+                if (sx >= 0.0f && sx <= rw && sy >= 0.0f && sy <= rh) {
+                    // Inside shadow bounding box
+                    row[px] = style->shadow_color; // Can be enhanced with gaussian falloff
+                    continue;
+                }
+            }
+
+            // 2. Rounded Box Distance Field Checking
+            // Determine distance from pixel to box rounded corners
+            float dx = 0.0f;
+            float dy = 0.0f;
+
+            if (fx < rx + radius) dx = (rx + radius) - fx;
+            else if (fx > rx + rw - radius) dx = fx - (rx + rw - radius);
+
+            if (fy < ry + radius) dy = (ry + radius) - fy;
+            else if (fy > ry + rh - radius) dy = fy - (ry + rh - radius);
+
+            float dist_sq = dx * dx + dy * dy;
+
+            // Check if pixel is strictly outside the rounded box shape
+            if (dx > 0.0f && dy > 0.0f && dist_sq > radius * radius) {
+                continue; // Outside shape, skip (transparent / leaves background untouched)
+            }
+
+            // Inside the box shape - Evaluate Fill or Border in ONE PASS
+            // Check if pixel falls into border region
+            bool is_border = false;
+            if (bw > 0.0f) {
+                bool near_left = (fx >= rx && fx < rx + bw);
+                bool near_right = (fx <= rx + rw && fx > rx + rw - bw);
+                bool near_top = (fy >= ry && fy < ry + bw);
+                bool near_bottom = (fy <= ry + rh && fy > ry + rh - bw);
+
+                if (near_left || near_right || near_top || near_bottom) {
+                    is_border = true;
+                }
+            }
+
+            if (is_border) {
+                row[px] = style->border_color;
+            } else {
+                // Interior fill: Evaluate Gradient or Solid Color in a single step
+                if (style->use_gradient) {
+                    float t = style->gradient_vertical 
+                        ? (fy - ry) / rh 
+                        : (fx - rx) / rw;
+                    row[px] = interpolate_color(style->gradient_start_color, style->gradient_end_color, t);
+                } else {
+                    row[px] = style->solid_color;
+                }
+            }
+        }
+    }
+}
+
+// --- Static Widget Cache Implementation ---
+
+LoomStaticWidgetHandle loom_widget_cache_create(int32_t width, int32_t height) {
+    if (width <= 0 || height <= 0) return nullptr;
+    return reinterpret_cast<LoomStaticWidgetHandle>(new LoomStaticWidget(width, height));
+}
+
+void loom_widget_cache_destroy(LoomStaticWidgetHandle widget) {
+    if (widget) {
+        delete reinterpret_cast<LoomStaticWidget*>(widget);
+    }
+}
+
+uint32_t* loom_widget_get_buffer(LoomStaticWidgetHandle widget) {
+    if (!widget) return nullptr;
+    auto w = reinterpret_cast<LoomStaticWidget*>(widget);
+    w->dirty = true; // Mark as modified when application fetches its buffer
+    return w->buffer.data();
+}
+
+void loom_widget_mark_dirty(LoomStaticWidgetHandle widget, bool dirty) {
+    if (widget) {
+        reinterpret_cast<LoomStaticWidget*>(widget)->dirty = dirty;
+    }
+}
+
+bool loom_widget_is_dirty(LoomStaticWidgetHandle widget) {
+    if (!widget) return false;
+    return reinterpret_cast<LoomStaticWidget*>(widget)->dirty;
+}
+
+void loom_widget_render_cached(
+    LoomStaticWidgetHandle widget,
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    int32_t pos_x,
+    int32_t pos_y
+) {
+    if (!widget || !dest) return;
+    auto w = reinterpret_cast<LoomStaticWidget*>(widget);
+
+    // If widget is not dirty, compositor skips re-evaluating or re-blitting heavy assets!
+    // Direct fast copy from widget static cache to screen buffer
+    int32_t start_x = std::max(0, pos_x);
+    int32_t start_y = std::max(0, pos_y);
+    int32_t end_x = std::min(dest_w, pos_x + w->width);
+    int32_t end_y = std::min(dest_h, pos_y + w->height);
+
+    if (start_x >= end_x || start_y >= end_y) return;
+
+    for (int32_t y = start_y; y < end_y; ++y) {
+        int32_t src_y = y - pos_y;
+        int32_t src_x_offset = start_x - pos_x;
+
+        uint32_t* dest_row = dest + (y * dest_w + start_x);
+        const uint32_t* src_row = w->buffer.data() + (src_y * w->width + src_x_offset);
+
+        std::memcpy(dest_row, src_row, (end_x - start_x) * sizeof(uint32_t));
+    }
+
+    // Clear dirty flag after successful presentation pass
+    w->dirty = false;
+}
+
+}
+========================================
+
+Ścieżka: ./cpp/render_helper.cpp
+Kod:
+#include "loomcos_bridge.h"
+#include <algorithm>
+#include <vector>
+#include <cmath>
+
+extern "C" {
+
+// Simple scanline fill for convex/arbitrary polygons (great for vector cursors)
+void loomcos_cpu_fill_polygon(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const LoomcosPoint* points,
+    int32_t point_count,
+    uint32_t color
+) {
+    if (!dest || !points || point_count < 3 || dest_w <= 0 || dest_h <= 0) return;
+
+    // Find bounding box of the polygon to limit scanline range
+    int32_t min_y = dest_h, max_y = 0;
+    int32_t min_x = dest_w, max_x = 0;
+
+    for (int i = 0; i < point_count; ++i) {
+        min_x = std::min(min_x, points[i].x);
+        max_x = std::max(max_x, points[i].x);
+        min_y = std::min(min_y, points[i].y);
+        max_y = std::max(max_y, points[i].y);
+    }
+
+    // Clip bounding box to screen dimensions
+    min_x = std::max(0, min_x);
+    min_y = std::max(0, min_y);
+    max_x = std::min(dest_w - 1, max_x);
+    max_y = std::min(dest_h - 1, max_y);
+
+    if (min_x > max_x || min_y > max_y) return;
+
+    // Scanline intersection algorithm (Winding number / Edge table approach)
+    for (int y = min_y; y <= max_y; ++y) {
+        std::vector<int32_t> node_x;
+
+        // Find all intersections of scanline 'y' with polygon edges
+        for (int i = 0, j = point_count - 1; i < point_count; j = i++) {
+            int32_t yi = points[i].y;
+            int32_t yj = points[j].y;
+            int32_t xi = points[i].x;
+            int32_t xj = points[j].x;
+
+            if ((yi < y && yj >= y) || (yj < y && yi >= y)) {
+                if (yi != yj) {
+                    int32_t x_intersect = xi + (y - yi) * (xj - xi) / (yj - yi);
+                    node_x.push_back(x_intersect);
+                }
+            }
+        }
+
+        // Sort intersection X coordinates left-to-right
+        std::sort(node_x.begin(), node_x.end());
+
+        // Fill pixels between pairs of intersections
+        for (size_t i = 0; i < node_x.size(); i += 2) {
+            if (i + 1 >= node_x.size()) break;
+
+            int32_t x_start = std::max(0, node_x[i]);
+            int32_t x_end = std::min(dest_w - 1, node_x[i + 1]);
+
+            for (int x = x_start; x <= x_end; ++x) {
+                dest[y * dest_w + x] = color;
+            }
+        }
+    }
+}
+
+// Blits a sprite handling standard per-pixel Alpha channel transparency
+void loomcos_cpu_blit_sprite_masked(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const uint32_t* src,
+    int32_t src_w,
+    int32_t src_h,
+    int32_t pos_x,
+    int32_t pos_y
+) {
+    if (!dest || !src || dest_w <= 0 || dest_h <= 0) return;
+
+    int32_t start_x = std::max(0, pos_x);
+    int32_t start_y = std::max(0, pos_y);
+    int32_t end_x = std::min(dest_w, pos_x + src_w);
+    int32_t end_y = std::min(dest_h, pos_y + src_h);
+
+    if (start_x >= end_x || start_y >= end_y) return;
+
+    for (int y = start_y; y < end_y; ++y) {
+        int32_t src_y = y - pos_y;
+        int32_t src_x_offset = start_x - pos_x;
+
+        uint32_t* dest_row = dest + (y * dest_w + start_x);
+        const uint32_t* src_row = src + (src_y * src_w + src_x_offset);
+
+        for (int x = 0; x < (end_x - start_x); ++x) {
+            uint32_t pixel = src_row[x];
+            // Extract alpha channel (assuming ARGB or RGBA layout, here taking highest byte)
+            uint8_t alpha = (pixel >> 24) & 0xFF;
+
+            if (alpha == 255) {
+                dest_row[x] = pixel;
+            } else if (alpha > 0) {
+                // Basic alpha blending fallback on CPU
+                uint32_t bg = dest_row[x];
+                // Simple channel-wise blend can be expanded here
+                dest_row[x] = pixel; // Simplified direct copy for now
+            }
+        }
+    }
+}
+
+}
+========================================
+
+Ścieżka: ./cpp/vector_scene.cpp
+Kod:
+#include "loomcos_vector.h"
+#include <vector>
+#include <cmath>
+#include <algorithm>
+
+struct VectorCommand {
+    LoomVectorCmdType type;
+    union {
+        LoomVecRect rect;
+        struct {
+            float aspect_ratio;
+            LoomAspectMode mode;
+            uint32_t color;
+        } wallpaper;
+    } data;
+};
+
+struct LoomVectorScene {
+    float grid_w;
+    float grid_h;
+    std::vector<VectorCommand> commands;
+
+    LoomVectorScene(float w, float h) : grid_w(w > 0.0f ? w : 1000.0f), grid_h(h > 0.0f ? h : 1000.0f) {}
+};
+
+extern "C" {
+
+LoomVectorSceneHandle loom_vector_scene_create(float grid_width, float grid_height) {
+    return reinterpret_cast<LoomVectorSceneHandle>(new LoomVectorScene(grid_width, grid_height));
+}
+
+void loom_vector_scene_destroy(LoomVectorSceneHandle scene) {
+    if (scene) {
+        delete reinterpret_cast<LoomVectorScene*>(scene);
+    }
+}
+
+void loom_vector_scene_clear(LoomVectorSceneHandle scene) {
+    if (scene) {
+        auto sc = reinterpret_cast<LoomVectorScene*>(scene);
+        sc->commands.clear();
+    }
+}
+
+void loom_vector_add_rounded_rect(
+    LoomVectorSceneHandle scene, 
+    float x, float y, float w, float h, 
+    float radius, uint32_t fill_color
+) {
+    if (!scene) return;
+    auto sc = reinterpret_cast<LoomVectorScene*>(scene);
+
+    VectorCommand cmd;
+    cmd.type = LOOM_VEC_CMD_RECT_ROUNDED;
+    cmd.data.rect.x = x;
+    cmd.data.rect.y = y;
+    cmd.data.rect.width = w;
+    cmd.data.rect.height = h;
+    cmd.data.rect.corner_radius = radius;
+    cmd.data.rect.fill_color = fill_color;
+    
+    sc->commands.push_back(cmd);
+}
+
+void loom_vector_add_wallpaper_layer(
+    LoomVectorSceneHandle scene,
+    float orig_aspect_ratio,
+    LoomAspectMode aspect_mode,
+    uint32_t fill_color
+) {
+    if (!scene) return;
+    auto sc = reinterpret_cast<LoomVectorScene*>(scene);
+
+    VectorCommand cmd;
+    cmd.type = LOOM_VEC_CMD_WALLPAPER;
+    cmd.data.wallpaper.aspect_ratio = orig_aspect_ratio;
+    cmd.data.wallpaper.mode = aspect_mode;
+    cmd.data.wallpaper.color = fill_color;
+
+    sc->commands.push_back(cmd);
+}
+
+void loom_vector_scene_render(
+    LoomVectorSceneHandle scene,
+    uint32_t* dest_buffer,
+    int32_t physical_width,
+    int32_t physical_height
+) {
+    if (!scene || !dest_buffer || physical_width <= 0 || physical_height <= 0) return;
+
+    auto sc = reinterpret_cast<LoomVectorScene*>(scene);
+
+    // Calculate dynamic scaling factors (Virtual Grid -> Physical Target Screen Pixels)
+    float scale_x = static_cast<float>(physical_width) / sc->grid_w;
+    float scale_y = static_cast<float>(physical_height) / sc->grid_h;
+
+    for (const auto& cmd : sc->commands) {
+        if (cmd.type == LOOM_VEC_CMD_WALLPAPER) {
+            // --- VECTOR WALLPAPER SCALING WITH ASPECT RATIO RETENTION ---
+            float screen_aspect = static_cast<float>(physical_width) / static_cast<float>(physical_height);
+            float target_aspect = cmd.data.wallpaper.aspect_ratio;
+
+            float draw_w = static_cast<float>(physical_width);
+            float draw_h = static_cast<float>(physical_height);
+            float offset_x = 0.0f;
+            float offset_y = 0.0f;
+
+            if (cmd.data.wallpaper.mode == LOOM_ASPECT_COVER) {
+                if (screen_aspect > target_aspect) {
+                    draw_h = draw_w / target_aspect;
+                    offset_y = (static_cast<float>(physical_height) - draw_h) / 2.0f;
+                } else {
+                    draw_w = draw_h * target_aspect;
+                    offset_x = (static_cast<float>(physical_width) - draw_w) / 2.0f;
+                }
+            } else if (cmd.data.wallpaper.mode == LOOM_ASPECT_CONTAIN) {
+                if (screen_aspect > target_aspect) {
+                    draw_w = draw_h * target_aspect;
+                    offset_x = (static_cast<float>(physical_width) - draw_w) / 2.0f;
+                } else {
+                    draw_h = draw_w / target_aspect;
+                    offset_y = (static_cast<float>(physical_height) - draw_h) / 2.0f;
+                }
+            }
+
+            // Fill wallpaper area on screen buffer directly
+            int32_t start_y = std::max(0, static_cast<int32_t>(offset_y));
+            int32_t end_y = std::min(physical_height, static_cast<int32_t>(offset_y + draw_h));
+            int32_t start_x = std::max(0, static_cast<int32_t>(offset_x));
+            int32_t end_x = std::min(physical_width, static_cast<int32_t>(offset_x + draw_w));
+
+            for (int y = start_y; y < end_y; ++y) {
+                uint32_t* row = dest_buffer + (y * physical_width);
+                for (int x = start_x; x < end_x; ++x) {
+                    row[x] = cmd.data.wallpaper.color;
+                }
+            }
+        } 
+        else if (cmd.type == LOOM_VEC_CMD_RECT_ROUNDED) {
+            // --- VECTOR SHAPE SCALING (Virtual Grid -> Physical Pixels) ---
+            const auto& r = cmd.data.rect;
+
+            // Scale bounding box coordinates directly to destination display DPI
+            float phys_x = r.x * scale_x;
+            float phys_y = r.y * scale_y;
+            float phys_w = r.width * scale_x;
+            float phys_h = r.height * scale_y;
+            float phys_r = r.corner_radius * ((scale_x + scale_y) * 0.5f);
+
+            int32_t min_x = std::max(0, static_cast<int32_t>(phys_x));
+            int32_t min_y = std::max(0, static_cast<int32_t>(phys_y));
+            int32_t max_x = std::min(physical_width, static_cast<int32_t>(phys_x + phys_w));
+            int32_t max_y = std::min(physical_height, static_cast<int32_t>(phys_y + phys_h));
+
+            // Rasterize crisp vector rounded corners on native screen resolution
+            for (int32_t py = min_y; py < max_y; ++py) {
+                uint32_t* row = dest_buffer + (py * physical_width);
+                for (int32_t px = min_x; px < max_x; ++px) {
+                    
+                    // Rounded corner distance check
+                    float dx = 0.0f;
+                    float dy = 0.0f;
+
+                    if (px < phys_x + phys_r) dx = (phys_x + phys_r) - px;
+                    else if (px > phys_x + phys_w - phys_r) dx = px - (phys_x + phys_w - phys_r);
+
+                    if (py < phys_y + phys_r) dy = (phys_y + phys_r) - py;
+                    else if (py > phys_y + phys_h - phys_r) dy = py - (phys_y + phys_h - phys_r);
+
+                    if (dx * dx + dy * dy <= phys_r * phys_r || (dx == 0.0f || dy == 0.0f)) {
+                        row[px] = r.fill_color;
+                    }
+                }
+            }
+        }
+    }
+}
+
+}
+========================================
+
+Ścieżka: ./cpp/window_class.cpp
+Kod:
+#include "loomcos_window.h"
+#include <cstring>
+#include <algorithm>
+#include <string>
+
+// Internal C++ class representing a specialized window type and its decorations
+class WindowInstanceInternal {
+public:
+    LoomcosWindowClassType type;
+    int32_t width;
+    int32_t height;
+    std::string title;
+    LoomcosDecorationMetrics metrics;
+    bool is_focused;
+
+    WindowInstanceInternal(LoomcosWindowClassType t, int32_t w, int32_t h, const char* t_str)
+        : type(t), width(w), height(h), title(t_str ? t_str : ""), is_focused(true) {
+        
+        // Default modern dark-theme decoration metrics
+        metrics.titlebar_height = 28;
+        metrics.border_width = 2;
+        metrics.button_size = 16;
+        metrics.titlebar_color = 0xFF28283D; // Dark slate
+        metrics.border_color = 0xFF45475A;   // Accent border
+        metrics.text_color = 0xFFCDD6F4;     // Light text
+    }
+
+    // Fast software rendering of the titlebar and window frame
+    void render_frame(uint32_t* dest, int32_t dest_w, int32_t dest_h, int32_t win_x, int32_t win_y) const {
+        if (type != WINDOW_CLASS_STANDARD_DECORATED) {
+            return; // Borderless or panels don't render standard window boxes
+        }
+
+        // 1. Draw top titlebar box
+        int32_t tb_height = metrics.titlebar_height;
+        int32_t total_w = width + (metrics.border_width * 2);
+        int32_t total_h = height + tb_height + (metrics.border_width * 2);
+
+        // Render borders and titlebar background
+        for (int y = 0; y < total_h; ++y) {
+            int32_t screen_y = win_y + y;
+            if (screen_y < 0 || screen_y >= dest_h) continue;
+
+            for (int x = 0; x < total_w; ++x) {
+                int32_t screen_x = win_x + x;
+                if (screen_x < 0 || screen_x >= dest_w) continue;
+
+                int32_t dest_idx = screen_y * dest_w + screen_x;
+
+                // Check if pixel belongs to outer border
+                bool is_border = (x < metrics.border_width || x >= total_w - metrics.border_width ||
+                                  y < metrics.border_width || y >= total_h - metrics.border_width);
+
+                // Check if pixel belongs to titlebar area
+                bool is_titlebar = (y >= metrics.border_width && y < metrics.border_width + tb_height &&
+                                    !is_border);
+
+                if (is_border) {
+                    dest[dest_idx] = metrics.border_color;
+                } else if (is_titlebar) {
+                    // Titlebar gradient or solid color
+                    dest[dest_idx] = is_focused ? metrics.titlebar_color : 0xFF181825;
+                }
+            }
+        }
+    }
+};
+
+// --- C-ABI FFI Exports ---
+
+extern "C" {
+
+CppWindowInstance* loomcos_window_create(LoomcosWindowClassType type, int32_t width, int32_t height, const char* title) {
+    return reinterpret_cast<CppWindowInstance*>(new WindowInstanceInternal(type, width, height, title));
+}
+
+void loomcos_window_destroy(CppWindowInstance* win) {
+    if (win) {
+        delete reinterpret_cast<WindowInstanceInternal*>(win);
+    }
+}
+
+void loomcos_window_set_metrics(CppWindowInstance* win, const LoomcosDecorationMetrics* metrics) {
+    if (win && metrics) {
+        auto instance = reinterpret_cast<WindowInstanceInternal*>(win);
+        instance->metrics = *metrics;
+    }
+}
+
+void loomcos_window_render_decorations(
+    const CppWindowInstance* win,
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    int32_t win_x,
+    int32_t win_y
+) {
+    if (win) {
+        const auto instance = reinterpret_cast<const WindowInstanceInternal*>(win);
+        instance->render_frame(dest, dest_w, dest_h, win_x, win_y);
+    }
+}
+
+}
+========================================
+
+Ścieżka: ./cpp/window_runtime.cpp
+Kod:
+#include "loomcos_runtime.h"
+#include <vector>
+#include <string>
+#include <mutex>
+#include <cstring>
+#include <algorithm>
+
+// Internal Window representation with double-buffering for glitch-free rendering
+class RuntimeWindow {
+public:
+    std::string title;
+    int32_t x, y, width, height;
+    uint32_t flags;
+    int32_t titlebar_height;
+    uint32_t bg_color;
+    uint32_t border_color;
+
+    // Double buffering buffers
+    std::vector<uint32_t> front_buffer;
+    std::vector<uint32_t> back_buffer;
+    std::mutex buffer_mutex;
+    bool is_locked;
+    bool has_pending_commit;
+
+    RuntimeWindow(const char* t, int32_t px, int32_t py, int32_t w, int32_t h, uint32_t f)
+        : title(t ? t : ""), x(px), y(py), width(w), height(h), flags(f),
+          titlebar_height(28), bg_color(0xFF1E1E2E), border_color(0xFF45475A),
+          is_locked(false), has_pending_commit(false) {
+        
+        size_t size = w * h;
+        front_buffer.resize(size, 0xFF000000);
+        back_buffer.resize(size, 0xFF000000);
+    }
+
+    void commit_buffers() {
+        std::lock_guard<std::mutex> lock(buffer_mutex);
+        if (has_pending_commit) {
+            // Atomic swap between back and front buffers to eliminate tearing/glitches
+            front_buffer = back_buffer;
+            has_pending_commit = false;
+        }
+    }
+};
+
+// Internal Context holding all active windows
+struct LoomContext {
+    int32_t screen_width;
+    int32_t screen_height;
+    std::vector<RuntimeWindow*> windows;
+    std::mutex context_mutex;
+
+    LoomContext(int w, int h) : screen_width(w), screen_height(h) {}
+};
+
+// --- C-ABI Implementation ---
+
+extern "C" {
+
+LoomContextHandle loom_context_create(int32_t screen_width, int32_t screen_height) {
+    return reinterpret_cast<LoomContextHandle>(new LoomContext(screen_width, screen_height));
+}
+
+void loom_context_destroy(LoomContextHandle ctx) {
+    if (ctx) {
+        auto context = reinterpret_cast<LoomContext*>(ctx);
+        for (auto win : context->windows) {
+            delete win;
+        }
+        delete context;
+    }
+}
+
+LoomWindowHandle loom_window_create(
+    LoomContextHandle ctx, 
+    const char* title, 
+    int32_t x, 
+    int32_t y, 
+    int32_t width, 
+    int32_t height, 
+    uint32_t flags
+) {
+    if (!ctx || width <= 0 || height <= 0) return nullptr;
+
+    auto context = reinterpret_cast<LoomContext*>(ctx);
+    auto window = new RuntimeWindow(title, x, y, width, height, flags);
+
+    {
+        std::lock_guard<std::mutex> lock(context->context_mutex);
+        context->windows.push_back(window);
+    }
+
+    return reinterpret_cast<LoomWindowHandle>(window);
+}
+
+void loom_window_destroy(LoomWindowHandle window) {
+    if (window) {
+        auto win = reinterpret_cast<RuntimeWindow*>(window);
+        delete win;
+    }
+}
+
+LoomResult loom_window_lock_buffer(LoomWindowHandle window, uint32_t** out_pixels, int32_t* out_stride) {
+    if (!window || !out_pixels || !out_stride) return LOOM_ERR_INVALID_HANDLE;
+
+    auto win = reinterpret_cast<RuntimeWindow*>(window);
+    win->buffer_mutex.lock();
+
+    if (win->is_locked) {
+        win->buffer_mutex.unlock();
+        return LOOM_ERR_TRANSACTION_FAILED;
+    }
+
+    win->is_locked = true;
+    *out_pixels = win->back_buffer.data();
+    *out_stride = win->width;
+    return LOOM_SUCCESS;
+}
+
+LoomResult loom_window_unlock_buffer(LoomWindowHandle window) {
+    if (!window) return LOOM_ERR_INVALID_HANDLE;
+
+    auto win = reinterpret_cast<RuntimeWindow*>(window);
+    if (!win->is_locked) {
+        return LOOM_ERR_TRANSACTION_FAILED;
+    }
+
+    win->is_locked = false;
+    win->buffer_mutex.unlock();
+    return LOOM_SUCCESS;
+}
+
+LoomResult loom_window_commit(LoomWindowHandle window) {
+    if (!window) return LOOM_ERR_INVALID_HANDLE;
+
+    auto win = reinterpret_cast<RuntimeWindow*>(window);
+    
+    // Mark buffer as ready for atomic swap
+    win->has_pending_commit = true;
+    win->commit_buffers();
+
+    return LOOM_SUCCESS;
+}
+
+LoomResult loom_window_set_titlebar_height(LoomWindowHandle window, int32_t height) {
+    if (!window || height < 0) return LOOM_ERR_INVALID_HANDLE;
+    auto win = reinterpret_cast<RuntimeWindow*>(window);
+    win->titlebar_height = height;
+    return LOOM_SUCCESS;
+}
+
+LoomResult loom_window_set_theme_colors(LoomWindowHandle window, uint32_t bg_color, uint32_t border_color) {
+    if (!window) return LOOM_ERR_INVALID_HANDLE;
+    auto win = reinterpret_cast<RuntimeWindow*>(window);
+    win->bg_color = bg_color;
+    win->border_color = border_color;
+    return LOOM_SUCCESS;
+}
+
+}
+========================================
+
+Ścieżka: ./include/lommcos_alpha.h
+Kod:
+#pragma once
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Blends a source buffer onto a destination buffer with full per-pixel alpha support (ARGB8888)
+void loomcos_cpu_blend_surface(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const uint32_t* src,
+    int32_t src_w,
+    int32_t src_h,
+    int32_t pos_x,
+    int32_t pos_y,
+    uint8_t global_alpha
+);
+
+// Blends with selective alpha / color-keying (e.g., treats a specific color as fully transparent, 
+// or applies a threshold to alpha channels for sharp bitonal transparency)
+void loomcos_cpu_blend_selective(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const uint32_t* src,
+    int32_t src_w,
+    int32_t src_h,
+    int32_t pos_x,
+    int32_t pos_y,
+    uint32_t color_key,
+    uint8_t alpha_threshold
+);
+
+#ifdef __cplusplus
+}
+#endif
+========================================
+
+Ścieżka: ./include/loomcos_anim.h
+Kod:
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Easing / Interpolation curves for natural-looking motion
+typedef enum {
+    LOOM_EASE_LINEAR = 0,
+    LOOM_EASE_IN     = 1,
+    LOOM_EASE_OUT    = 2,
+    LOOM_EASE_IN_OUT = 3
+} LoomEaseType;
+
+// Animation property type
+typedef enum {
+    LOOM_ANIM_PROPERTY_POSITION = 0, // Interpolates X and Y
+    LOOM_ANIM_PROPERTY_SIZE     = 1, // Interpolates Width and Height
+    LOOM_ANIM_PROPERTY_OPACITY  = 2  // Interpolates Alpha channel (0 - 255)
+} LoomAnimProperty;
+
+// Rectangle definition for animation bounds
+typedef struct {
+    int32_t x;
+    int32_t y;
+    int32_t width;
+    int32_t height;
+} LoomAnimRect;
+
+// Opaque handle for an active animation instance
+struct LoomAnimationInstance;
+typedef struct LoomAnimationInstance* LoomAnimationHandle;
+
+// --- Animation Lifecycle & Management ---
+LoomAnimationHandle loom_anim_create_rect(
+    LoomAnimRect start_val, 
+    LoomAnimRect target_val, 
+    uint32_t duration_frames, 
+    LoomEaseType ease
+);
+
+LoomAnimationHandle loom_anim_create_float(
+    float start_val, 
+    float target_val, 
+    uint32_t duration_frames, 
+    LoomEaseType ease
+);
+
+void loom_anim_destroy(LoomAnimationHandle anim);
+
+// Advances animation by one frame and returns current interpolated rectangle values
+bool loom_anim_step_rect(LoomAnimationHandle anim, LoomAnimRect* out_current_val);
+
+// Advances animation by one frame and returns current interpolated float/alpha value
+bool loom_anim_step_float(LoomAnimationHandle anim, float* out_current_val);
+
+// Checks if animation has completed its duration
+bool loom_anim_is_finished(LoomAnimationHandle anim);
+
+#ifdef __cplusplus
+}
+#endif
+========================================
+
+Ścieżka: ./include/loomcos_bridge.h
+Kod:
+#pragma once
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct {
+    int32_t x;
+    int32_t y;
+} LoomcosPoint;
+
+// Renders a filled polygon (e.g. a vector cursor like a triangle) with color and alpha blending
+void loomcos_cpu_fill_polygon(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const LoomcosPoint* points,
+    int32_t point_count,
+    uint32_t color
+);
+
+// Blits a sprite with an arbitrary polygon clip mask or alpha channel
+void loomcos_cpu_blit_sprite_masked(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const uint32_t* src,
+    int32_t src_w,
+    int32_t src_h,
+    int32_t pos_x,
+    int32_t pos_y
+);
+
+#ifdef __cplusplus
+}
+#endif
+========================================
+
+Ścieżka: ./include/loomcos_color.h
+Kod:
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Color representation structure (RGBA8888)
+typedef struct {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t a;
+} LoomColorRGB;
+
+// --- Color Decoding & Conversion ---
+// Parses a HEX color string (e.g., "#FF5733" or "FF5733" with optional alpha) into a 32-bit ARGB integer
+uint32_t loom_color_from_hex(const char* hex_str);
+
+// Creates a 32-bit ARGB color from individual RGB(A) bytes
+uint32_t loom_color_from_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
+// Extracts individual RGBA components from a 32-bit ARGB color integer
+void loom_color_to_rgba(uint32_t color, LoomColorRGB* out_rgb);
+
+// --- Solid Color Drawing Primitives ---
+// Fills a solid colored rectangle onto a target buffer with boundary clipping
+void loom_cpu_fill_solid_rect(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    int32_t rect_x,
+    int32_t rect_y,
+    int32_t rect_w,
+    int32_t rect_h,
+    uint32_t color
+);
+
+#ifdef __cplusplus
+}
+#endif
+========================================
+
+Ścieżka: ./include/loomcos_diff.h
+Kod:
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Performs a differential (selective) blit between a new source buffer and a previous source buffer.
+// Automatically skips unmodified scanlines using fast row-level comparison, copying only changed pixels.
+void loom_cpu_blit_differential(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const uint32_t* src_new,
+    const uint32_t* src_old,
+    int32_t src_w,
+    int32_t src_h,
+    int32_t pos_x,
+    int32_t pos_y
+);
+
+#ifdef __cplusplus
+}
+#endif
+========================================
+
+Ścieżka: ./include/loomcos_effects.h
+Kod:
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Gradient Stop definition
+typedef struct {
+    float position; // 0.0 to 1.0
+    uint32_t color;
+} LoomGradientStop;
+
+// Single-pass Advanced Box Style (Zero Overdraw Structure)
+typedef struct {
+    float x, y, width, height;
+    float corner_radius;
+    
+    // Border properties
+    float border_width;
+    uint32_t border_color;
+
+    // Gradient fill properties (if enabled)
+    bool use_gradient;
+    uint32_t solid_color;
+    uint32_t gradient_start_color;
+    uint32_t gradient_end_color;
+    bool gradient_vertical; // true = top-to-bottom, false = left-to-right
+
+    // Shadow / Filter properties
+    bool has_shadow;
+    uint32_t shadow_color;
+    float shadow_offset_x;
+    float shadow_offset_y;
+    float shadow_blur;
+} LoomBoxStyle;
+
+// Static Widget Cache Structure (Draw Once mechanism)
+struct LoomStaticWidget;
+typedef struct LoomStaticWidget* LoomStaticWidgetHandle;
+
+// --- Zero-Overdraw Single-Pass Rendering ---
+// Renders a fully styled box (rounded corners, gradient fill, border, and shadow) 
+// in a SINGLE memory pass, completely avoiding multi-layer overdraw!
+void loom_render_styled_box_single_pass(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const LoomBoxStyle* style
+);
+
+// --- Static Widget Cache Lifecycle ---
+LoomStaticWidgetHandle loom_widget_cache_create(int32_t width, int32_t height);
+void loom_widget_cache_destroy(LoomStaticWidgetHandle widget);
+uint32_t* loom_widget_get_buffer(LoomStaticWidgetHandle widget);
+void loom_widget_mark_dirty(LoomStaticWidgetHandle widget, bool dirty);
+bool loom_widget_is_dirty(LoomStaticWidgetHandle widget);
+
+// Blits the static widget cache to screen only when dirty
+void loom_widget_render_cached(
+    LoomStaticWidgetHandle widget,
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    int32_t pos_x,
+    int32_t pos_y
+);
+
+#ifdef __cplusplus
+}
+#endif
+========================================
+
+Ścieżka: ./include/loomcos_restore.h
+Kod:
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Represents an exposed screen region requiring restoration/regeneration
+typedef struct {
+    int32_t x;
+    int32_t y;
+    int32_t width;
+    int32_t height;
+} LoomExposedRegion;
+
+// Clears and repairs an exposed screen region (e.g., after closing a window)
+// by repainting it with background color and preparing it for lower layer redrawing.
+void loom_cpu_repair_exposed_region(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    const LoomExposedRegion* region,
+    uint32_t background_color
+);
+
+// Cleans up structural ghost traces left by destroyed window buffers
+void loom_cpu_purge_window_ghost(
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    int32_t win_x,
+    int32_t win_y,
+    int32_t win_w,
+    int32_t win_h,
+    uint32_t fill_color
+);
+
+#ifdef __cplusplus
+}
+#endif
+
+// // Przykład użycia w Rust przy usuwaniu okna z SceneGraph
+// pub fn close_window(&mut self, surface_id: SurfaceId) {
+//     if let Some(surface) = self.scene.remove(surface_id) {
+//         // 1. Purge window ghost from framebuffer immediately using C++ backend
+//         unsafe {
+//             loom_cpu_purge_window_ghost(
+//                 self.framebuffer.as_mut_ptr(),
+//                 self.width,
+//                 self.height,
+//                 surface.bounds.x,
+//                 surface.bounds.y,
+//                 surface.bounds.width,
+//                 surface.bounds.height,
+//                 0xFF1E1E2E, // Background color fallback
+//             );
+//         }
+
+//         // 2. Trigger redraw for windows that were underneath the closed window
+//         // (SceneGraph automatically exposes lower layers in the next frame pass)
+//     }
+// }
+========================================
+
+Ścieżka: ./include/loomcos_runtime.h
+Kod:
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Error codes for robust error handling across all language bindings
+typedef enum {
+    LOOM_SUCCESS = 0,
+    LOOM_ERR_INVALID_HANDLE = -1,
+    LOOM_ERR_OUT_OF_MEMORY = -2,
+    LOOM_ERR_BUFFER_MISMATCH = -3,
+    LOOM_ERR_TRANSACTION_FAILED = -4
+} LoomResult;
+
+// Window styling and decoration flags
+typedef enum {
+    LOOM_WINDOW_FLAG_DECORATED = 1 << 0,
+    LOOM_WINDOW_FLAG_RESIZABLE = 1 << 1,
+    LOOM_WINDOW_FLAG_POPUP     = 1 << 2,
+    LOOM_WINDOW_FLAG_TRANSPARENT = 1 << 3
+} LoomWindowFlags;
+
+// Opaque handles
+struct LoomContext;
+struct LoomWindow;
+
+typedef struct LoomContext* LoomContextHandle;
+typedef struct LoomWindow* LoomWindowHandle;
+
+// --- Context Lifecycle ---
+LoomContextHandle loom_context_create(int32_t screen_width, int32_t screen_height);
+void loom_context_destroy(LoomContextHandle ctx);
+
+// --- Window Lifecycle & Customization ---
+LoomWindowHandle loom_window_create(
+    LoomContextHandle ctx, 
+    const char* title, 
+    int32_t x, 
+    int32_t y, 
+    int32_t width, 
+    int32_t height, 
+    uint32_t flags
+);
+
+void loom_window_destroy(LoomWindowHandle window);
+
+// --- Glitch-Free Double Buffering & Transaction API ---
+// Gets a pointer to the back-buffer pixels for safe rendering without tearing
+LoomResult loom_window_lock_buffer(LoomWindowHandle window, uint32_t** out_pixels, int32_t* out_stride);
+LoomResult loom_window_unlock_buffer(LoomWindowHandle window);
+
+// ATOMIC COMMIT: Enforces that all buffer updates and geometry changes 
+// are synchronized and rendered atomically in the next frame compositor pass.
+LoomResult loom_window_commit(LoomWindowHandle window);
+
+// Customization metrics (Window Box styling)
+LoomResult loom_window_set_titlebar_height(LoomWindowHandle window, int32_t height);
+LoomResult loom_window_set_theme_colors(LoomWindowHandle window, uint32_t bg_color, uint32_t border_color);
+
+#ifdef __cplusplus
+}
+#endif
+========================================
+
+Ścieżka: ./include/loomcos_vector.h
+Kod:
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Wallpaper and SVG Asset Aspect-Ratio scaling modes
+typedef enum {
+    LOOM_ASPECT_STRETCH = 0,     // Stretches vector mesh to fill screen (ignores ratio)
+    LOOM_ASPECT_CONTAIN = 1,     // Scales vector mesh to fit entirely inside screen while preserving aspect ratio
+    LOOM_ASPECT_COVER   = 2,     // Scales vector mesh to completely cover screen while preserving ratio (clips overflow)
+    LOOM_ASPECT_CENTER  = 3      // Keeps original vector scale centered without scaling
+} LoomAspectMode;
+
+// 2D Vector Point on the resolution-independent Virtual Grid
+typedef struct {
+    float x;
+    float y;
+} LoomVectorPoint;
+
+// Vector Command Types for Virtual Grid Rendering
+typedef enum {
+    LOOM_VEC_CMD_RECT_ROUNDED = 0,
+    LOOM_VEC_CMD_CIRCLE       = 1,
+    LOOM_VEC_CMD_PATH_LINE    = 2,
+    LOOM_VEC_CMD_WALLPAPER    = 3
+} LoomVectorCmdType;
+
+// Rounded Rectangle Vector Primitive
+typedef struct {
+    float x, y, width, height;
+    float corner_radius;
+    uint32_t fill_color;
+    uint32_t stroke_color;
+    float stroke_width;
+} LoomVecRect;
+
+// Opaque handles
+struct LoomVectorScene;
+typedef struct LoomVectorScene* LoomVectorSceneHandle;
+
+// Lifecycle & Scene Construction
+LoomVectorSceneHandle loom_vector_scene_create(float grid_width, float grid_height);
+void loom_vector_scene_destroy(LoomVectorSceneHandle scene);
+void loom_vector_scene_clear(LoomVectorSceneHandle scene);
+
+// Adding resolution-independent vector primitives
+void loom_vector_add_rounded_rect(
+    LoomVectorSceneHandle scene, 
+    float x, float y, float w, float h, 
+    float radius, uint32_t fill_color
+);
+
+void loom_vector_add_wallpaper_layer(
+    LoomVectorSceneHandle scene,
+    float orig_aspect_ratio,
+    LoomAspectMode aspect_mode,
+    uint32_t fill_color
+);
+
+// RASTERIZER CORE: Translates Virtual Grid commands directly to physical resolution screen buffer
+// Supports any resolution dynamically (Full HD -> 4K -> 8K -> 128K)
+void loom_vector_scene_render(
+    LoomVectorSceneHandle scene,
+    uint32_t* dest_buffer,
+    int32_t physical_width,
+    int32_t physical_height
+);
+
+#ifdef __cplusplus
+}
+#endif
+========================================
+
+Ścieżka: ./include/loomcos_window.h
+Kod:
+#pragma once
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Defines specialized window class types
+typedef enum {
+    WINDOW_CLASS_STANDARD_DECORATED = 0,
+    WINDOW_CLASS_BORDERLESS_POPUP   = 1,
+    WINDOW_CLASS_SYSTEM_PANEL       = 2,
+    WINDOW_CLASS_TOOLTIP            = 3
+} LoomcosWindowClassType;
+
+// Structural metrics for window decorations (Window Box)
+typedef struct {
+    int32_t titlebar_height;
+    int32_t border_width;
+    int32_t button_size;
+    uint32_t titlebar_color;
+    uint32_t border_color;
+    uint32_t text_color;
+} LoomcosDecorationMetrics;
+
+// Opaque handle to a C++ Window Class instance
+struct CppWindowInstance;
+
+// FFI Lifecycle functions managed by C++
+CppWindowInstance* loomcos_window_create(LoomcosWindowClassType type, int32_t width, int32_t height, const char* title);
+void loomcos_window_destroy(CppWindowInstance* win);
+void loomcos_window_set_metrics(CppWindowInstance* win, const LoomcosDecorationMetrics* metrics);
+
+// Renders window decorations (titlebar, borders, buttons) directly onto a target buffer
+void loomcos_window_render_decorations(
+    const CppWindowInstance* win,
+    uint32_t* dest,
+    int32_t dest_w,
+    int32_t dest_h,
+    int32_t win_x,
+    int32_t win_y
+);
+
+#ifdef __cplusplus
+}
+#endif
+========================================
+
+Ścieżka: ./src/dirty.rs
+Kod:
+// crates/loomcos-core/src/dirty.rs
+
+use crate::surface::Rect;
+
+pub struct DirtyTracker {
+    dirty_rects: Vec<Rect>,
+    is_fully_dirty: bool,
+}
+
+impl DirtyTracker {
+    pub fn new() -> Self {
+        Self {
+            dirty_rects: Vec::new(),
+            is_fully_dirty: true, // Force full redraw on startup
+        }
+    }
+
+    /// Mark a specific region as needing a redraw
+    pub fn mark_dirty(&mut self, rect: Rect) {
+        if self.is_fully_dirty {
+            return;
+        }
+        self.dirty_rects.push(rect);
+    }
+
+    /// Force a full screen redraw (e.g., wallpaper change, resolution switch)
+    pub fn invalidate_all(&mut self) {
+        self.is_fully_dirty = true;
+        self.dirty_rects.clear();
+    }
+
+    pub fn is_clean(&self) -> bool {
+        !self.is_fully_dirty && self.dirty_rects.is_empty()
+    }
+
+    pub fn take_dirty_regions(&mut self, screen_width: i32, screen_height: i32) -> Vec<Rect> {
+        if self.is_fully_dirty {
+            self.is_fully_dirty = false;
+            return vec![Rect::new(0, 0, screen_width, screen_height)];
+        }
+
+        let regions = std::mem::take(&mut self.dirty_rects);
+        // Optional: Here you can merge overlapping rects to reduce blit passes
+        regions
+    }
+}
+
+// pub fn render_frame(&mut self) {
+//     // 1. Check if anything actually changed (surfaces, cursor, wallpaper)
+//     if self.dirty_tracker.is_clean() {
+//         return; // Skip frame completely, zero CPU usage!
+//     }
+
+//     // 2. Fetch all regions that need repainting
+//     let dirty_regions = self.dirty_tracker.take_dirty_regions(self.width, self.height);
+    
+//     // Convert Rust rects to FFI C structs for high-speed C++ execution
+//     let ffi_rects: Vec<LoomcosRect> = dirty_regions.iter().map(|r| LoomcosRect {
+//         x: r.x,
+//         y: r.y,
+//         width: r.width,
+//         height: r.height,
+//     }).collect();
+
+//     unsafe {
+//         // 3. Clear only the dirty areas with wallpaper/background color
+//         loomcos_cpu_clear_rects(
+//             self.framebuffer.as_mut_ptr(),
+//             self.width,
+//             self.height,
+//             ffi_rects.as_ptr(),
+//             ffi_rects.len() as i32,
+//             0xFF1E1E2E, // Default dark theme background color
+//         );
+
+//         // 4. Blit visible surface parts that intersect with dirty areas
+//         for surface in self.scene.active_surfaces() {
+//             loomcos_cpu_blit_dirty(
+//                 self.framebuffer.as_mut_ptr(),
+//                 self.width,
+//                 self.height,
+//                 surface.buffer.as_ptr(),
+//                 surface.bounds.width,
+//                 surface.bounds.height,
+//                 surface.bounds.x,
+//                 surface.bounds.y,
+//                 ffi_rects.as_ptr(),
+//                 ffi_rects.len() as i32,
+//             );
+//         }
+//     }
+// }
+========================================
+
+Ścieżka: ./src/ffi.rs
+Kod:
+// crates/loomcos-core/src/ffi.rs
+
+use std::os::raw::c_int;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct LoomcosRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+extern "C" {
+    // Existing render helpers
+    pub fn loomcos_cpu_blit_clipped(
+        dest: *mut u32,
+        dest_w: c_int,
+        dest_h: c_int,
+        src: *const u32,
+        src_w: c_int,
+        src_h: c_int,
+        pos_x: c_int,
+        pos_y: c_int,
+        clip: *const LoomcosRect,
+    );
+
+    // New Alpha Blending functions from alpha_blend.cpp
+    pub fn loomcos_cpu_blend_surface(
+        dest: *mut u32,
+        dest_w: c_int,
+        dest_h: c_int,
+        src: *const u32,
+        src_w: c_int,
+        src_h: c_int,
+        pos_x: c_int,
+        pos_y: c_int,
+        global_alpha: u8,
+    );
+
+    pub fn loomcos_cpu_blend_selective(
+        dest: *mut u32,
+        dest_w: c_int,
+        dest_h: c_int,
+        src: *const u32,
+        src_w: c_int,
+        src_h: c_int,
+        pos_x: c_int,
+        pos_y: c_int,
+        color_key: u32,
+        alpha_threshold: u8,
+    );
+}
+========================================
+
+Ścieżka: ./src/lib.rs
+Kod:
+// crates/loomcos-core/src/lib.rs
+
+pub mod ffi;
+pub mod scenegraph;
+pub mod session;
+pub mod surface;
+
+use scenegraph::SceneGraph;
+use session::{ProcessId, ProcessType, WindowSession};
+use surface::{Surface, SurfaceId, SurfaceRole};
+
+pub struct CompositorCore {
+    width: i32,
+    height: i32,
+    framebuffer: Vec<u32>,
+    pub scene: SceneGraph,
+    sessions: Vec<WindowSession>,
+    next_id: u64,
+}
+
+impl CompositorCore {
+    pub fn new(width: i32, height: i32) -> Self {
+        let size = (width * height) as usize;
+        Self {
+            width,
+            height,
+            framebuffer: vec![0; size],
+            scene: SceneGraph::new(),
+            sessions: Vec::new(),
+            next_id: 1,
+        }
+    }
+
+    /// Creates a tracked surface and registers its execution session
+    pub fn register_window(
+        &mut self,
+        pid: u32,
+        process_type: ProcessType,
+        role: SurfaceRole,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        title: &str,
+    ) -> SurfaceId {
+        let id = SurfaceId(self.next_id);
+        self.next_id += 1;
+
+        let surface = Surface::new(id, role, x, y, width, height);
+        self.scene.insert(surface);
+
+        let session = WindowSession::new(ProcessId(pid), process_type, id, title);
+        self.sessions.push(session);
+
+        id
+    }
+
+    pub fn get_session_by_surface(&self, surface_id: SurfaceId) -> Option<&WindowSession> {
+        self.sessions.iter().find(|s| s.surface_id == surface_id)
+    }
+}
+========================================
+
+Ścieżka: ./src/scenegraph.rs
+Kod:
+// crates/loomcos-core/src/scenegraph.rs
+
+use crate::surface::{Rect, Surface, SurfaceId};
+
+pub struct SceneGraph {
+    surfaces: Vec<Surface>,
+}
+
+impl SceneGraph {
+    pub fn new() -> Self {
+        Self {
+            surfaces: Vec::new(),
+        }
+    }
+
+    pub fn insert(&mut self, surface: Surface) {
+        self.surfaces.push(surface);
+        self.sort_z_order();
+    }
+
+    pub fn remove(&mut self, id: SurfaceId) -> Option<Surface> {
+        if let Some(index) = self.surfaces.iter().position(|s| s.id == id) {
+            Some(self.surfaces.remove(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_mut(&mut self, id: SurfaceId) -> Option<&mut Surface> {
+        self.surfaces.iter_mut().find(|s| s.id == id)
+    }
+
+    pub fn sort_z_order(&mut self) {
+        // Lower z_index renders first (background -> foreground)
+        self.surfaces.sort_by_key(|s| s.z_index);
+    }
+
+    // Performs hit-testing to locate which window is under the cursor
+    pub fn surface_at_point(&self, x: i32, y: i32) -> Option<SurfaceId> {
+        self.surfaces
+            .iter()
+            .rev() // Front-to-back checking for input events
+            .find(|s| s.visible && s.bounds.contains_point(x, y))
+            .map(|s| s.id)
+    }
+
+    pub fn active_surfaces(&self) -> impl Iterator<Item = &Surface> {
+        self.surfaces.iter().filter(|s| s.visible)
+    }
+}
+========================================
+
+Ścieżka: ./src/session.rs
+Kod:
+// crates/loomcos-core/src/session.rs
+
+use crate::surface::SurfaceId;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessType {
+    /// Heavy full application process fetching data and executing logic
+    FullApplication,
+    /// Lightweight system background helper, decoration renderer, or daemon
+    SystemHelper,
+    /// Internal compositor core task
+    CompositorInternal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessId(pub u32);
+
+pub struct WindowSession {
+    pub pid: ProcessId,
+    pub process_type: ProcessType,
+    pub surface_id: SurfaceId,
+    pub title: String,
+    pub is_responsive: bool,
+}
+
+impl WindowSession {
+    pub fn new(pid: ProcessId, process_type: ProcessType, surface_id: SurfaceId, title: &str) -> Self {
+        Self {
+            pid,
+            process_type,
+            surface_id,
+            title: title.to_string(),
+            is_responsive: true,
+        }
+    }
+}
+========================================
+
+Ścieżka: ./src/surface.rs
+Kod:
+// crates/loomcos-core/src/scenegraph.rs
+
+use crate::surface::{Rect, Surface, SurfaceId};
+
+pub struct SceneGraph {
+    surfaces: Vec<Surface>,
+}
+
+impl SceneGraph {
+    pub fn new() -> Self {
+        Self {
+            surfaces: Vec::new(),
+        }
+    }
+
+    pub fn insert(&mut self, surface: Surface) {
+        self.surfaces.push(surface);
+        self.sort_z_order();
+    }
+
+    pub fn remove(&mut self, id: SurfaceId) -> Option<Surface> {
+        if let Some(index) = self.surfaces.iter().position(|s| s.id == id) {
+            Some(self.surfaces.remove(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_mut(&mut self, id: SurfaceId) -> Option<&mut Surface> {
+        self.surfaces.iter_mut().find(|s| s.id == id)
+    }
+
+    pub fn sort_z_order(&mut self) {
+        // Lower z_index renders first (background -> foreground)
+        self.surfaces.sort_by_key(|s| s.z_index);
+    }
+
+    /// Performs hit-testing to locate which window is under the cursor (front-to-back)
+    pub fn surface_at_point(&self, x: i32, y: i32) -> Option<SurfaceId> {
+        self.surfaces
+            .iter()
+            .rev()
+            .find(|s| s.visible && s.bounds.contains_point(x, y))
+            .map(|s| s.id)
+    }
+
+    pub fn active_surfaces(&self) -> impl Iterator<Item = &Surface> {
+        self.surfaces.iter().filter(|s| s.visible)
+    }
+
+    /// Returns all surfaces that are layered strictly ABOVE the given target surface
+    pub fn surfaces_above(&self, target_id: SurfaceId) -> Vec<&Surface> {
+        let target_z = match self.surfaces.iter().find(|s| s.id == target_id) {
+            Some(s) => s.z_index,
+            None => return Vec::new(),
+        };
+
+        self.surfaces
+            .iter()
+            .filter(|s| s.visible && s.z_index >= target_z && s.id != target_id)
+            .collect()
+    }
+
+    /// Calculates if a specific surface is completely or partially occluded 
+    /// by other opaque windows stacked above it.
+    pub fn get_visible_rects_for(&self, target_id: SurfaceId) -> Vec<Rect> {
+        let target_bounds = match self.surfaces.iter().find(|s| s.id == target_id) {
+            Some(s) => s.bounds,
+            None => return Vec::new(),
+        };
+
+        // Start with the full surface bounds as the initial visible area
+        let mut visible_regions = vec![target_bounds];
+
+        // Gather all opaque surfaces rendered on top of this target
+        let upper_surfaces = self.surfaces_above(target_id);
+
+        for upper in upper_surfaces {
+            // If the upper surface has transparency (alpha < 255), it doesn't fully occlude background
+            if upper.alpha < 255 {
+                continue;
+            }
+
+            let mut next_regions = Vec::new();
+
+            for region in visible_regions {
+                // Subtract the upper surface bounds from the current visible region
+                subtract_rect(region, upper.bounds, &mut next_regions);
+            }
+
+            visible_regions = next_regions;
+            if visible_regions.is_empty() {
+                break; // Fully occluded, no further calculation needed
+            }
+        }
+
+        visible_regions
+    }
+}
+
+/// Helper function to subtract an occluding rectangle from a target region,
+/// splitting the remaining visible area into sub-rectangles.
+fn subtract_rect(target: Rect, occluder: Rect, output: &mut Vec<Rect>) {
+    // Check if rectangles overlap at all
+    if target.x >= occluder.x + occluder.width ||
+       target.x + target.width <= occluder.x ||
+       target.y >= occluder.y + occluder.height ||
+       target.y + target.height <= occluder.y 
+    {
+        output.push(target);
+        return;
+    }
+
+    // Top slice
+    if target.y < occluder.y {
+        output.push(Rect::new(
+            target.x,
+            target.y,
+            target.width,
+            occluder.y - target.y,
+        ));
+    }
+
+    // Bottom slice
+    let occluder_bottom = occluder.y + occluder.height;
+    let target_bottom = target.y + target.height;
+    if target_bottom > occluder_bottom {
+        output.push(Rect::new(
+            target.x,
+            occluder_bottom,
+            target.width,
+            target_bottom - occluder_bottom,
+        ));
+    }
+
+    let overlap_y_start = std::cmp::max(target.y, occluder.y);
+    let overlap_y_end = std::cmp::min(target_bottom, occluder_bottom);
+
+    // Left slice
+    if target.x < occluder.x {
+        output.push(Rect::new(
+            target.x,
+            overlap_y_start,
+            occluder.x - target.x,
+            overlap_y_end - overlap_y_start,
+        ));
+    }
+
+    // Right slice
+    let occluder_right = occluder.x + occluder.width;
+    let target_right = target.x + target.width;
+    if target_right > occluder_right {
+        output.push(Rect::new(
+            occluder_right,
+            overlap_y_start,
+            target_right - occluder_right,
+            overlap_y_end - overlap_y_start,
+        ));
+    }
+}
+
+// crates/loomcos-core/src/surface.rs
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SurfaceRole {
+    /// Full application window (owns a main data-processing loop and client connection)
+    ToplevelWindow,
+    /// Window decoration element (titlebar, borders, minimize/close buttons managed by compositor/helper)
+    Decoration,
+    /// Transient popup, context menu, or dropdown
+    Popup,
+    /// Tooltip or temporary hover overlay
+    Tooltip,
+    /// Mouse cursor overlay
+    Cursor,
+    /// Wallpaper / desktop background layer
+    Background,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SurfaceId(pub u64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl Rect {
+    pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
+        Self { x, y, width, height }
+    }
+
+    pub fn contains_point(&self, px: i32, py: i32) -> bool {
+        px >= self.x && px < self.x + self.width && py >= self.y && py < self.y + self.height
+    }
+}
+
+pub struct Surface {
+    pub id: SurfaceId,
+    pub role: SurfaceRole,
+    pub bounds: Rect,
+    pub z_index: i32,
+    pub visible: bool,
+    pub alpha: u8,
+    pub buffer: Vec<u32>,
+    /// Optional parent window ID if this surface is a decoration or popup attached to a window
+    pub parent_id: Option<SurfaceId>,
+}
+
+impl Surface {
+    pub fn new(id: SurfaceId, role: SurfaceRole, x: i32, y: i32, width: i32, height: i32) -> Self {
+        let size = (width * height) as usize;
+        Self {
+            id,
+            role,
+            bounds: Rect::new(x, y, width, height),
+            z_index: 0,
+            visible: true,
+            alpha: 255,
+            buffer: vec![0; size],
+            parent_id: None,
+        }
+    }
+
+    pub fn update_buffer(&mut self, new_pixels: &[u32]) -> Result<(), &'static str> {
+        if new_pixels.len() != self.buffer.len() {
+            return Err("Buffer size mismatch");
+        }
+        self.buffer.copy_from_slice(new_pixels);
+        Ok(())
+    }
+}
+========================================
+
