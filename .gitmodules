@@ -4,3 +4,6 @@
 [submodule "cosmic-epoch-for-TrangorgeOS"]
 	path = cosmic-epoch-for-TrangorgeOS
 	url = git@github.com:CTRL-F-0rg3/cosmic-epoch-for-TrangorgeOS.git
+[submodule "EmergenceShell-for-TrangorgeOS"]
+	path = EmergenceShell-for-TrangorgeOS
+	url = git@github.com:CTRL-F-0rg3/EmergenceShell-for-TrangorgeOS.git

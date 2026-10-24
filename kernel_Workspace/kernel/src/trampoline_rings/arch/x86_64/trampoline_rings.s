@@ -103,6 +103,51 @@ isr_default:
     out %al, $0xA0
     iretq
 
+// Debug exception reporters: print the vector, the error code (where the CPU
+// pushes one) and CR2 (page faults), then halt. These replace `isr_default`
+// for the faults a ring-3 crash is most likely to raise, so the serial log
+// shows exactly which one tripped instead of a bare triple-fault reset.
+
+.global isr_pf
+.type isr_pf, @function
+isr_pf:
+    pop %rsi
+    mov %cr2, %rdx
+    mov $0x0E, %rdi
+    call tr_exception
+1:  hlt
+    jmp 1b
+
+.global isr_gp
+.type isr_gp, @function
+isr_gp:
+    pop %rsi
+    xor %rdx, %rdx
+    mov $0x0D, %rdi
+    call tr_exception
+1:  hlt
+    jmp 1b
+
+.global isr_ud
+.type isr_ud, @function
+isr_ud:
+    xor %rsi, %rsi
+    xor %rdx, %rdx
+    mov $0x06, %rdi
+    call tr_exception
+1:  hlt
+    jmp 1b
+
+.global isr_df
+.type isr_df, @function
+isr_df:
+    pop %rsi
+    xor %rdx, %rdx
+    mov $0x08, %rdi
+    call tr_exception
+1:  hlt
+    jmp 1b
+
 .global tr_restore_ctx
 .type tr_restore_ctx, @function
 tr_restore_ctx:

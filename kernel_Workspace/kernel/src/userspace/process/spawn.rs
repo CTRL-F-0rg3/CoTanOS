@@ -37,13 +37,21 @@ pub fn spawn_elf(path: &str) -> Result<(), &'static str> {
     }
     unsafe { kprintf(b"[spawn] step 5: stack mapped\n\0".as_ptr()); }
 
-    tr::add_world(tr::RING_USER,
-                  loaded.aspace.cr3(),
-                  loaded.entry,
-                  USER_STACK_TOP,
-                  0)
+    let entry = loaded.entry;
+    let cr3 = loaded.aspace.cr3();
+
+    tr::add_world(tr::RING_USER, cr3, entry, USER_STACK_TOP, 0)
         .ok_or("world table full")?;
     unsafe { kprintf(b"[spawn] step 6: world added\n\0".as_ptr()); }
+
+    // `World` stores only the cr3 number, but the ring-3 code is about to run
+    // on these page tables. Dropping `loaded` here would run `aspace_destroy`,
+    // which unmaps the user stack VMA and frees the PML4 out from under the
+    // world (the boot log showed `[start] pt[511]=0x0` for exactly this
+    // reason, crashing on the first ring-3 stack push). Hand the address space
+    // to the world by leaking it; the tables are intentionally not reclaimed on
+    // exit (see `paging_aspace_destroy`), so this matches the lifetime model.
+    core::mem::forget(loaded.aspace);
 
     Ok(())
 }
