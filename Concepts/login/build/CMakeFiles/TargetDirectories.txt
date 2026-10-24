@@ -1,0 +1,3 @@
+/home/ctrl/TrangorgeOS/Concepts/login/build/CMakeFiles/loginscreen.dir
+/home/ctrl/TrangorgeOS/Concepts/login/build/CMakeFiles/edit_cache.dir
+/home/ctrl/TrangorgeOS/Concepts/login/build/CMakeFiles/rebuild_cache.dir

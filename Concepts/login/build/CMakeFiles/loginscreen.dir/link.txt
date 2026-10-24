@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/loginscreen.dir/link.d CMakeFiles/loginscreen.dir/src/main.cpp.o CMakeFiles/loginscreen.dir/src/glad/src/glad.c.o -o loginscreen  /usr/lib/libglfw.so.3.5 /usr/lib/libGLX.so /usr/lib/libOpenGL.so
