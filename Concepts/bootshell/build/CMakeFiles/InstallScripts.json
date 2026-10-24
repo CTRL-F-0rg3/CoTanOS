@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/ctrl/TrangorgeOS/Concepts/bootshell/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

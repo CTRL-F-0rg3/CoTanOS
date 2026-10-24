@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/overlay_proto.dir/link.d CMakeFiles/overlay_proto.dir/src/main.cpp.o CMakeFiles/overlay_proto.dir/src/glad/src/glad.c.o -o overlay_proto  /usr/lib/libglfw.so.3.5 /usr/lib/libGLX.so /usr/lib/libOpenGL.so
