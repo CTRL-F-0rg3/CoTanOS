@@ -1,0 +1,3 @@
+/home/ctrl/TrangorgeOS/Concepts/bootshell/build/CMakeFiles/overlay_proto.dir
+/home/ctrl/TrangorgeOS/Concepts/bootshell/build/CMakeFiles/edit_cache.dir
+/home/ctrl/TrangorgeOS/Concepts/bootshell/build/CMakeFiles/rebuild_cache.dir
