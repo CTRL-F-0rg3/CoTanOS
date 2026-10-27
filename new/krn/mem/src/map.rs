@@ -41,9 +41,7 @@
 //! * **Range operations**: O(range_length / 64).
 
 use core::fmt;
-use core::ops::Range;
 
-use crate::frm::{FrameError, PageSize, PhysAddr, PhysFrame};
 
 // ============================================================================
 // Constants & Poison Patterns

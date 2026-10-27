@@ -47,12 +47,9 @@
 //! 10. Emergency pool.
 //! 11. Tests.
 
-use core::cell::UnsafeCell;
 use core::fmt;
-use core::marker::PhantomData;
 use core::mem;
 use core::ptr::{self, NonNull};
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::frm::{
     FrameError, IrqSpinlock, PageSize, PhysAddr, PhysFrame, PhysicalFrameAllocator, Size4Kb,
@@ -288,7 +285,7 @@ struct SlabObjectMeta {
 }
 
 #[cfg(debug_assertions)]
-const SLAB_OBJECT_MAGIC: u32 = 0xSLAB_0BEC;
+const SLAB_OBJECT_MAGIC: u32 = 0x51AB_0BEC;
 
 // ============================================================================
 // 4. SlabPage — a physical page divided into objects
@@ -463,7 +460,7 @@ impl SlabCache {
             header.free_head = free_head;
 
             // Add to empty list.
-            self.push_page(&mut self.empty_pages, page_addr);
+            Self::push_page(&mut self.empty_pages, page_addr);
         }
 
         self.total_pages += 1;
@@ -478,32 +475,36 @@ impl SlabCache {
     }
 
     /// Pushes a page onto a list (partial, full, or empty).
-    unsafe fn push_page(&mut self, list: &mut PhysAddr, page_addr: PhysAddr) {
-        let header = &mut *(page_addr.as_usize() as *mut SlabPageHeader);
-        header.next = *list;
-        header.prev = PhysAddr::ZERO;
-        if !list.is_null() {
-            let next_header = &mut (*list.as_usize() as *mut SlabPageHeader);
-            next_header.prev = page_addr;
+    fn push_page(list: &mut PhysAddr, page_addr: PhysAddr) {
+        unsafe {
+            let header = &mut *(page_addr.as_usize() as *mut SlabPageHeader);
+            header.next = *list;
+            header.prev = PhysAddr::ZERO;
+            if !(*list).is_null() {
+                let next_header = &mut *((*list).as_usize() as *mut SlabPageHeader);
+                next_header.prev = page_addr;
+            }
+            *list = page_addr;
         }
-        *list = page_addr;
     }
 
     /// Removes a page from a list.
-    unsafe fn remove_page(&mut self, list: &mut PhysAddr, page_addr: PhysAddr) {
-        let header = &mut *(page_addr.as_usize() as *mut SlabPageHeader);
-        if !header.prev.is_null() {
-            let prev_header = &mut (*header.prev.as_usize() as *mut SlabPageHeader);
-            prev_header.next = header.next;
-        } else {
-            *list = header.next;
+    fn remove_page(list: &mut PhysAddr, page_addr: PhysAddr) {
+        unsafe {
+            let header = &mut *(page_addr.as_usize() as *mut SlabPageHeader);
+            if !header.prev.is_null() {
+                let prev_header = &mut *(header.prev.as_usize() as *mut SlabPageHeader);
+                prev_header.next = header.next;
+            } else {
+                *list = header.next;
+            }
+            if !header.next.is_null() {
+                let next_header = &mut *(header.next.as_usize() as *mut SlabPageHeader);
+                next_header.prev = header.prev;
+            }
+            header.next = PhysAddr::ZERO;
+            header.prev = PhysAddr::ZERO;
         }
-        if !header.next.is_null() {
-            let next_header = &mut (*header.next.as_usize() as *mut SlabPageHeader);
-            next_header.prev = header.prev;
-        }
-        header.next = PhysAddr::ZERO;
-        header.prev = PhysAddr::ZERO;
     }
 
     /// Allocates an object from this cache.
@@ -513,17 +514,17 @@ impl SlabCache {
     ) -> Result<NonNull<u8>, SlabError> {
         // Try partial list first.
         if !self.partial_pages.is_null() {
-            return self.allocate_from_list(&mut self.partial_pages, true, alloc_frame);
+            return unsafe { self.allocate_from_list(&mut self.partial_pages, true, alloc_frame) };
         }
 
         // Try empty list.
         if !self.empty_pages.is_null() {
-            return self.allocate_from_list(&mut self.empty_pages, false, alloc_frame);
+            return unsafe { unsafe { self.allocate_from_list(&mut self.empty_pages, false, alloc_frame) } };
         }
 
         // Grow the cache.
         self.grow(alloc_frame)?;
-        self.allocate_from_list(&mut self.empty_pages, false, alloc_frame)
+        unsafe { self.allocate_from_list(&mut self.empty_pages, false, alloc_frame) }
     }
 
     /// Allocates an object from a specific list (partial or empty).
@@ -550,13 +551,13 @@ impl SlabCache {
         // Move page to appropriate list.
         if is_partial {
             if header.is_full() {
-                self.remove_page(list, page_addr);
-                self.push_page(&mut self.full_pages, page_addr);
+                Self::remove_page(list, page_addr);
+                Self::push_page(&mut self.full_pages, page_addr);
             }
         } else {
             // Was empty, now partial.
-            self.remove_page(list, page_addr);
-            self.push_page(&mut self.partial_pages, page_addr);
+            Self::remove_page(list, page_addr);
+            Self::push_page(&mut self.partial_pages, page_addr);
         }
 
         self.total_allocated += 1;
@@ -576,7 +577,7 @@ impl SlabCache {
         // Call constructor if present.
         if let Some(ctor) = self.ctor {
             let user_ptr = self.user_pointer(obj_addr);
-            ctor(user_ptr.as_usize() as *mut u8);
+            ctor(user_ptr.as_ptr() as usize as *mut u8);
         }
 
         Ok(self.user_pointer(obj_addr))
@@ -609,7 +610,7 @@ impl SlabCache {
 
             if header.magic != SLAB_PAGE_MAGIC {
                 return Err(SlabError::InvalidObject {
-                    addr: obj_ptr.as_usize(),
+                    addr: obj_ptr.as_ptr() as usize,
                     expected_size: self.object_size,
                 });
             }
@@ -617,11 +618,11 @@ impl SlabCache {
             #[cfg(debug_assertions)]
             {
                 // Check redzones.
-                let obj_raw = obj_addr.as_usize() as *const u8;
+                let obj_raw = obj_addr.as_usize() as *mut u8;
                 for i in 0..REDZONE_SIZE {
                     if *obj_raw.add(i) != REDZONE_PATTERN {
                         return Err(SlabError::RedzoneCorruption {
-                            addr: obj_ptr.as_usize(),
+                            addr: obj_ptr.as_ptr() as usize,
                             location: "before object",
                         });
                     }
@@ -629,7 +630,7 @@ impl SlabCache {
                 for i in 0..REDZONE_SIZE {
                     if *obj_raw.add(REDZONE_SIZE + self.object_size + i) != REDZONE_PATTERN {
                         return Err(SlabError::RedzoneCorruption {
-                            addr: obj_ptr.as_usize(),
+                            addr: obj_ptr.as_ptr() as usize,
                             location: "after object",
                         });
                     }
@@ -654,12 +655,12 @@ impl SlabCache {
             // Move page to appropriate list.
             if header.is_full() {
                 // Was full, now partial.
-                self.remove_page(&mut self.full_pages, page_addr);
-                self.push_page(&mut self.partial_pages, page_addr);
+                Self::remove_page(&mut self.full_pages, page_addr);
+                Self::push_page(&mut self.partial_pages, page_addr);
             } else if header.is_empty() {
                 // Was partial, now empty.
-                self.remove_page(&mut self.partial_pages, page_addr);
-                self.push_page(&mut self.empty_pages, page_addr);
+                Self::remove_page(&mut self.partial_pages, page_addr);
+                Self::push_page(&mut self.empty_pages, page_addr);
 
                 // Optionally shrink: free empty pages if we have too many.
                 // (Simplified: just keep them for now).
@@ -676,11 +677,11 @@ impl SlabCache {
     fn object_pointer(&self, user_ptr: NonNull<u8>) -> PhysAddr {
         #[cfg(debug_assertions)]
         {
-            PhysAddr::new(user_ptr.as_usize() - REDZONE_SIZE)
+            PhysAddr::new(user_ptr.as_ptr() as usize - REDZONE_SIZE)
         }
         #[cfg(not(debug_assertions))]
         {
-            PhysAddr::new(user_ptr.as_usize())
+            PhysAddr::new(user_ptr.as_ptr() as usize)
         }
     }
 
@@ -743,17 +744,17 @@ impl SlabAllocator {
     /// Initializes all slab caches.
     unsafe fn init_caches() -> [IrqSpinlock<SlabCache>; 11] {
         [
-            IrqSpinlock::new(SlabCache::new("slab-32", 32)),
-            IrqSpinlock::new(SlabCache::new("slab-64", 64)),
-            IrqSpinlock::new(SlabCache::new("slab-96", 96)),
-            IrqSpinlock::new(SlabCache::new("slab-128", 128)),
-            IrqSpinlock::new(SlabCache::new("slab-192", 192)),
-            IrqSpinlock::new(SlabCache::new("slab-256", 256)),
-            IrqSpinlock::new(SlabCache::new("slab-512", 512)),
-            IrqSpinlock::new(SlabCache::new("slab-1024", 1024)),
-            IrqSpinlock::new(SlabCache::new("slab-2048", 2048)),
-            IrqSpinlock::new(SlabCache::new("slab-4096", 4096)),
-            IrqSpinlock::new(SlabCache::new("slab-8192", 8192)),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-32", 32) }),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-64", 64) }),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-96", 96) }),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-128", 128) }),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-192", 192) }),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-256", 256) }),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-512", 512) }),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-1024", 1024) }),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-2048", 2048) }),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-4096", 4096) }),
+            IrqSpinlock::new(unsafe { SlabCache::new("slab-8192", 8192) }),
         ]
     }
 
@@ -800,8 +801,14 @@ impl SlabAllocator {
     }
 
     /// Returns statistics for all caches.
-    pub fn stats(&self) -> Vec<SlabCacheStats> {
-        self.caches.iter().map(|c| c.lock().stats()).collect()
+    pub fn stats(&self) -> [Option<SlabCacheStats>; 11] {
+        {
+        let mut result: [Option<SlabCacheStats>; 11] = [None; 11];
+        for (i, cache) in self.caches.iter().enumerate() {
+            result[i] = Some(cache.lock().stats());
+        }
+        result
+    }
     }
 }
 

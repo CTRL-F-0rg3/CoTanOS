@@ -52,7 +52,7 @@
 use core::fmt;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-use crate::frm::{AllocatorStats as FrameAllocatorStats, FragmentationReport, IrqSpinlock};
+use crate::frm::{FragmentationReport, IrqSpinlock};
 
 // ============================================================================
 // 1. StatError

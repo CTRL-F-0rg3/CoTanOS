@@ -3,6 +3,7 @@
 #include "Vtb_rv64i_pipe.cpp"
 #include "Vtb_rv64i_pipe___024root__0.cpp"
 #include "Vtb_rv64i_pipe__main.cpp"
+#include "Vtb_rv64i_pipe__ConstPool__0__Slow.cpp"
 #include "Vtb_rv64i_pipe___024root__Slow.cpp"
 #include "Vtb_rv64i_pipe___024root__0__Slow.cpp"
 #include "Vtb_rv64i_pipe__Syms__Slow.cpp"

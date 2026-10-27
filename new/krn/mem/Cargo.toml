@@ -1,6 +1,21 @@
 [package]
-name = "krn-mem"
+name = "cotanos-mem"
 version = "0.1.0"
 edition = "2021"
 authors = ["CTRL-F-0rg3"]
+description = "CoTanOS Memory Management Subsystem"
 license = "GPL-3.0-only"
+
+[lib]
+name = "cotanos_mem"
+path = "src/lib.rs"
+
+[features]
+default = []
+debug = []
+per-cpu-cache = []
+zones = []
+
+[dependencies]
+
+[dev-dependencies]

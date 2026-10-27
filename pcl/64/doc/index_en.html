@@ -1,0 +1,1362 @@
+cat > docs/index.html <<'HTMLEOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RV64I Pipeline — Technical Documentation</title>
+<style>
+:root{
+  --blue:#2563eb; --blue-d:#1e40af; --green:#16a34a; --orange:#ea580c;
+  --red:#dc2626; --bg:#f8fafc; --card:#ffffff; --border:#e2e8f0;
+  --text:#0f172a; --muted:#64748b;
+  --code-bg:#0f172a; --code-fg:#e2e8f0; --code-kw:#60a5fa;
+  --code-str:#86efac; --code-num:#fbbf24; --code-com:#94a3b8;
+  --sidebar:#0f172a; --sidebar-text:#cbd5e1;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html{scroll-behavior:smooth; scroll-padding-top:80px;}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:var(--bg); color:var(--text); line-height:1.6;
+  font-size:16px;
+}
+code,pre,.mono{
+  font-family:'JetBrains Mono','Fira Code','Cascadia Code',Menlo,Monaco,Consolas,monospace;
+  font-size:0.92em;
+}
+
+/* ===== SIDEBAR ===== */
+#sidebar{
+  position:fixed; left:0; top:0; bottom:0; width:280px;
+  background:var(--sidebar); color:var(--sidebar-text);
+  overflow-y:auto; padding:24px 0; z-index:100;
+  border-right:1px solid #1e293b;
+}
+#sidebar h1{
+  color:#fff; font-size:16px; padding:0 24px 16px;
+  border-bottom:1px solid #1e293b; margin-bottom:16px;
+  letter-spacing:0.02em;
+}
+#sidebar h1 small{
+  display:block; font-size:11px; color:#64748b;
+  font-weight:400; margin-top:4px; letter-spacing:0.1em;
+  text-transform:uppercase;
+}
+#sidebar nav a{
+  display:block; padding:8px 24px; color:var(--sidebar-text);
+  text-decoration:none; font-size:13.5px; border-left:3px solid transparent;
+  transition:all 0.15s;
+}
+#sidebar nav a:hover{background:#1e293b; color:#fff;}
+#sidebar nav a.active{
+  border-left-color:var(--blue); color:#fff; background:#1e293b;
+}
+#sidebar nav .sub{padding-left:40px; font-size:12.5px; opacity:0.85;}
+
+/* ===== MAIN ===== */
+main{
+  margin-left:280px; padding:40px 60px 120px;
+  max-width:1050px;
+}
+
+/* ===== HEADINGS ===== */
+h2{
+  font-size:28px; margin:60px 0 20px; padding-bottom:12px;
+  border-bottom:2px solid var(--border); color:var(--text);
+}
+h2:first-of-type{margin-top:0;}
+h3{
+  font-size:20px; margin:36px 0 12px; color:var(--blue-d);
+}
+h4{
+  font-size:16px; margin:24px 0 8px; color:var(--text);
+  font-weight:600;
+}
+
+/* ===== TEXT ===== */
+p{margin:12px 0;}
+ul,ol{margin:12px 0 12px 24px;}
+li{margin:4px 0;}
+a{color:var(--blue); text-decoration:none;}
+a:hover{text-decoration:underline;}
+
+/* ===== CARDS ===== */
+.card{
+  background:var(--card); border:1px solid var(--border);
+  border-radius:12px; padding:20px 24px; margin:20px 0;
+  box-shadow:0 1px 3px rgba(0,0,0,0.04);
+}
+.card h4{margin-top:0;}
+
+.grid-2{
+  display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:20px 0;
+}
+.grid-3{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin:20px 0;
+}
+.grid-2 .card, .grid-3 .card{margin:0;}
+
+/* ===== CODE ===== */
+pre{
+  background:var(--code-bg); color:var(--code-fg);
+  padding:18px 22px; border-radius:10px; overflow-x:auto;
+  margin:16px 0; line-height:1.55;
+}
+code:not(pre code){
+  background:#e2e8f0; color:#be185d;
+  padding:2px 6px; border-radius:4px; font-size:0.88em;
+}
+pre code{color:var(--code-fg);}
+.kw{color:var(--code-kw); font-weight:500;}
+.str{color:var(--code-str);}
+.num{color:var(--code-num);}
+.com{color:var(--code-com); font-style:italic;}
+.reg{color:#f472b6;}
+
+/* ===== TABLES ===== */
+table{
+  width:100%; border-collapse:collapse; margin:16px 0;
+  background:var(--card); border-radius:8px; overflow:hidden;
+  box-shadow:0 1px 3px rgba(0,0,0,0.04);
+}
+th{
+  background:#f1f5f9; text-align:left; padding:10px 14px;
+  font-weight:600; font-size:14px; color:var(--text);
+  border-bottom:1px solid var(--border);
+}
+td{
+  padding:9px 14px; border-bottom:1px solid var(--border);
+  font-size:14.5px;
+}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#f8fafc;}
+td code{
+  background:#f1f5f9; color:var(--text); padding:1px 5px;
+  border-radius:3px; font-size:0.85em;
+}
+
+/* ===== CALLOUTS ===== */
+.callout{
+  border-left:4px solid var(--blue); background:#eff6ff;
+  padding:14px 20px; border-radius:0 8px 8px 0; margin:16px 0;
+}
+.callout.warn{border-color:var(--orange); background:#fff7ed;}
+.callout.danger{border-color:var(--red); background:#fef2f2;}
+.callout.success{border-color:var(--green); background:#f0fdf4;}
+.callout strong{display:block; margin-bottom:4px;}
+
+/* ===== PIPELINE DIAGRAM ===== */
+.pipeline{
+  display:flex; align-items:stretch; justify-content:center;
+  gap:8px; margin:24px 0; flex-wrap:wrap;
+}
+.pstage{
+  flex:1; min-width:120px; background:var(--card);
+  border:2px solid var(--border); border-radius:10px;
+  padding:16px 12px; text-align:center; position:relative;
+  transition:all 0.2s;
+}
+.pstage .num{
+  display:inline-block; width:24px; height:24px; line-height:24px;
+  background:var(--blue); color:#fff; border-radius:50%;
+  font-size:12px; font-weight:700; margin-bottom:6px;
+}
+.pstage .name{
+  font-weight:700; font-size:15px; color:var(--text); margin:4px 0;
+}
+.pstage .desc{
+  font-size:11.5px; color:var(--muted); line-height:1.3;
+}
+.pstage.if{border-color:#3b82f6;}
+.pstage.id{border-color:#8b5cf6;}
+.pstage.ex{border-color:#ec4899;}
+.pstage.mem{border-color:#f59e0b;}
+.pstage.wb{border-color:#10b981;}
+.parrow{
+  display:flex; align-items:center; color:#94a3b8;
+  font-size:20px; font-weight:300; padding:0 2px;
+}
+
+/* ===== BLOCK DIAGRAM ===== */
+.blockdiag{
+  display:grid; grid-template-columns:repeat(4,1fr);
+  gap:12px; margin:24px 0;
+}
+.bdiag-box{
+  background:linear-gradient(135deg,#f8fafc,#f1f5f9);
+  border:1.5px solid var(--border); border-radius:8px;
+  padding:14px 10px; text-align:center; font-size:12px;
+  font-weight:500; color:var(--text);
+}
+.bdiag-box.prim{
+  background:linear-gradient(135deg,#dbeafe,#bfdbfe);
+  border-color:#93c5fd; font-weight:600;
+}
+.bdiag-box.csr{
+  background:linear-gradient(135deg,#fed7aa,#fdba74);
+  border-color:#fb923c; font-weight:600;
+}
+
+/* ===== TOC ===== */
+.toc{
+  background:var(--card); border:1px solid var(--border);
+  border-radius:12px; padding:20px 28px; margin:24px 0;
+}
+.toc h3{margin-top:0; font-size:17px;}
+.toc ol{margin:8px 0 0 22px;}
+.toc li{margin:3px 0; font-size:14.5px;}
+.toc a{color:var(--blue);}
+
+/* ===== MISC ===== */
+hr{border:none; border-top:1px solid var(--border); margin:36px 0;}
+.tag{
+  display:inline-block; background:#e0e7ff; color:var(--blue-d);
+  padding:2px 8px; border-radius:4px; font-size:11px;
+  font-weight:600; letter-spacing:0.03em; text-transform:uppercase;
+  margin-right:4px;
+}
+.badge-pass{
+  display:inline-block; background:#dcfce7; color:#15803d;
+  padding:2px 8px; border-radius:12px; font-size:11px;
+  font-weight:600; letter-spacing:0.03em;
+}
+.badge-wip{
+  display:inline-block; background:#fef3c7; color:#a16207;
+  padding:2px 8px; border-radius:12px; font-size:11px;
+  font-weight:600;
+}
+.badge-todo{
+  display:inline-block; background:#fee2e2; color:#b91c1c;
+  padding:2px 8px; border-radius:12px; font-size:11px;
+  font-weight:600;
+}
+
+/* ===== RESPONSIVE ===== */
+@media(max-width:900px){
+  #sidebar{
+    position:relative; width:100%; height:auto; padding:16px 0;
+  }
+  main{margin-left:0; padding:24px 20px 80px;}
+  .grid-2, .grid-3{grid-template-columns:1fr;}
+  .blockdiag{grid-template-columns:repeat(2,1fr);}
+  .pipeline{flex-direction:column;}
+  .parrow{transform:rotate(90deg);}
+}
+
+/* ===== print ===== */
+@media print{
+  #sidebar{display:none;}
+  main{margin:0; padding:0;}
+  pre{background:#f1f5f9; color:#000; border:1px solid #ccc;}
+  .kw,.str,.num,.com,.reg{color:#000;}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ SIDEBAR ============ -->
+<aside id="sidebar">
+  <h1>RV64I Pipeline
+    <small>Technical Documentation</small>
+  </h1>
+  <nav>
+    <a href="#intro">Introduction</a>
+    <a href="#how-silicon" class="sub">How silicon is made</a>
+    <a href="#riscv" class="sub">RISC-V in a nutshell</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#modules">RTL Modules</a>
+    <a href="#alu" class="sub">ALU</a>
+    <a href="#regfile" class="sub">Register File</a>
+    <a href="#decoder" class="sub">Decoder</a>
+    <a href="#csr" class="sub">CSR / Trap</a>
+    <a href="#core" class="sub">Pipeline Core</a>
+    <a href="#mem" class="sub">Memory</a>
+    <a href="#pipeline">Pipeline In Depth</a>
+    <a href="#if" class="sub">IF — Fetch</a>
+    <a href="#id" class="sub">ID — Decode</a>
+    <a href="#ex" class="sub">EX — Execute</a>
+    <a href="#mem-stage" class="sub">MEM — Memory</a>
+    <a href="#wb" class="sub">WB — Writeback</a>
+    <a href="#hazards">Hazards &amp; Forwarding</a>
+    <a href="#traps">CSR &amp; Traps</a>
+    <a href="#isa">Instruction Set</a>
+    <a href="#workflow">Workflow</a>
+    <a href="#tests">Tests</a>
+    <a href="#roadmap">Roadmap</a>
+    <a href="#references">References</a>
+  </nav>
+</aside>
+
+<main>
+
+<!-- ============ INTRODUCTION ============ -->
+<section id="intro">
+<h2>Introduction</h2>
+
+<p>
+This document describes a <strong>complete 64-bit RISC-V processor design</strong>
+written in Verilog HDL, along with its full verification environment in assembly.
+The core implements the base <code>RV64I</code> instruction set, the
+multiply/divide extension <code>M</code>, and the <code>Zicsr</code> extension
+(CSR + traps). It is built as a <strong>5-stage pipeline</strong> with data
+forwarding, load-use hazard detection, and software-interrupt handling.
+</p>
+
+<p>
+This project is a starting point for learning the entire silicon design process —
+from ISA specification, through RTL, simulation, and verification, to
+tape-out preparation. It is also a foundation for a custom operating system:
+the core can be extended with additional features (UART, timers, MMU) towards
+compatibility with the QEMU <code>virt</code> platform.
+</p>
+
+<div class="toc">
+<h3>Table of Contents</h3>
+<ol>
+<li><a href="#intro">Introduction</a> — why we build a CPU, how silicon is made</li>
+<li><a href="#architecture">Architecture</a> — overview, specification, block diagram</li>
+<li><a href="#modules">RTL Modules</a> — ALU, regfile, decoder, CSR, pipeline core, memory</li>
+<li><a href="#pipeline">Pipeline In Depth</a> — IF/ID/EX/MEM/WB step by step</li>
+<li><a href="#hazards">Hazards &amp; Forwarding</a> — RAW, load-use, control hazard</li>
+<li><a href="#traps">CSR &amp; Traps</a> — control registers, exceptions, mret</li>
+<li><a href="#isa">Instruction Set</a> — full RV64IM + Zicsr table</li>
+<li><a href="#workflow">Workflow</a> — assembler → ELF → hex → simulation</li>
+<li><a href="#tests">Tests</a> — regression suite and tohost convention</li>
+<li><a href="#roadmap">Roadmap</a> — QEMU, OS, future extensions</li>
+<li><a href="#references">References</a> — specs, tools, literature</li>
+</ol>
+</div>
+</section>
+
+<!-- ============ HOW SILICON IS MADE ============ -->
+<section id="how-silicon">
+<h3>How Silicon Is Made — Project Context</h3>
+
+<p>
+Designing a processor is a multi-month process broken into several phases.
+Understanding them is crucial, because <strong>RTL and simulation are only
+about 20% of the total work</strong>. Below is the roadmap from idea to
+physical chip.
+</p>
+
+<div class="card">
+<h4>Phase 1 — Specification and Reference Model</h4>
+<p>
+Before the first line of RTL is written, an <strong>executable
+specification</strong> is created — an ISA model (Instruction Set Simulator,
+ISS) written in C, Rust, or Python. This model is the "golden reference":
+whatever the RTL does must produce an identical result. The standard in the
+RISC-V world is <strong>Spike</strong> — the official ISS.
+</p>
+</div>
+
+<div class="card">
+<h4>Phase 2 — RTL Design</h4>
+<p>
+RTL (<em>Register Transfer Level</em>) describes hardware in an HDL (Verilog,
+SystemVerilog, Chisel, VHDL). Our core is at this stage. RTL defines how
+signals propagate between registers in each clock cycle.
+</p>
+</div>
+
+<div class="card">
+<h4>Phase 3 — Functional Verification</h4>
+<p>
+<strong>60–70% of the entire project time</strong> is verification. It proves
+that the RTL matches the specification. Methods:
+</p>
+<ul>
+<li><strong>Directed tests</strong> — hand-written assembly programs (our <code>.S</code>)</li>
+<li><strong>Constrained-random</strong> — random instruction sequence generators (<code>riscv-dv</code>)</li>
+<li><strong>Formal verification</strong> — mathematical proof of properties (SymbiYosys)</li>
+<li><strong>Compliance tests</strong> — official ISA tests (<code>riscv-arch-test</code>)</li>
+<li><strong>Golden trace</strong> — comparison of execution trace with Spike or QEMU</li>
+</ul>
+</div>
+
+<div class="card">
+<h4>Phase 4 — Synthesis and Physical Analysis</h4>
+<p>
+RTL is translated into logic gates (synthesis, e.g. Yosys, Design Compiler),
+then into a physical layout (place &amp; route). The result is a GDSII file —
+ready to be sent to the fab.
+</p>
+</div>
+
+<div class="card">
+<h4>Phase 5 — Tape-out</h4>
+<p>
+<strong>Tape-out</strong> is the moment the design (GDSII) is sent to the
+foundry (TSMC, GlobalFoundries, Intel Foundry). Cost: from hundreds of
+thousands to tens of millions of dollars — depending on the lithography.
+One bug = months of waiting and lost money, which is why verification
+matters so much.
+</p>
+</div>
+
+<div class="callout warn">
+<strong>Where we are in this process</strong>
+We are in <strong>Phase 2 and 3</strong> — we have working RTL and a basic
+set of tests. Next steps: extended verification (formal, golden trace),
+peripheral integration (UART, CLINT), QEMU integration.
+</div>
+</section>
+
+<!-- ============ RISC-V IN A NUTSHELL ============ -->
+<section id="riscv">
+<h3>RISC-V in a Nutshell</h3>
+
+<p>
+RISC-V is an open Instruction Set Architecture (ISA) designed at UC Berkeley
+in 2010. Unlike ARM and x86 it is <strong>completely free and open</strong> —
+anyone can design and manufacture their own processor without licensing fees.
+It is modular: a base set plus optional extensions.
+</p>
+
+<h4>Basic notation</h4>
+<table>
+<tr><th>Symbol</th><th>Meaning</th></tr>
+<tr><td><code>XLEN</code></td><td>Word width — 32 for RV32, 64 for RV64</td></tr>
+<tr><td><code>RV64I</code></td><td>Base 64-bit Integer instruction set</td></tr>
+<tr><td><code>RV64M</code></td><td>Multiply/divide extension</td></tr>
+<tr><td><code>RV64A</code></td><td>Atomics (lr/sc/amo*)</td></tr>
+<tr><td><code>RV64F/D</code></td><td>Floating point (single/double)</td></tr>
+<tr><td><code>RV64C</code></td><td>Compressed 16-bit instructions</td></tr>
+<tr><td><code>RV64G</code></td><td>Shorthand: IMAFD_Zicsr_Zifencei (general-purpose)</td></tr>
+<tr><td><code>Zicsr</code></td><td>Access to CSRs (Control and Status Registers)</td></tr>
+</table>
+
+<h4>Our configuration</h4>
+<p>
+The implemented core supports <strong>RV64IM_Zicsr</strong>. This is the
+minimal set that allows bare-metal programs to run, but <em>not</em> a full
+operating system (missing MMU, S-mode, external interrupts).
+</p>
+
+<h4>RISC philosophy</h4>
+<ul>
+<li><strong>Fixed instruction length</strong> — 32 bits (4 bytes), simple fetch</li>
+<li><strong>Load/store architecture</strong> — ALU works only on registers, not memory</li>
+<li><strong>32 general-purpose registers</strong> + <code>x0</code> hardwired to zero</li>
+<li><strong>No flags</strong> — comparisons via dedicated instructions (<code>slt</code>, <code>beq</code>)</li>
+<li><strong>PC-relative addressing</strong> — code is position independent</li>
+</ul>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section id="architecture">
+<h2>Architecture</h2>
+
+<h3>Specification</h3>
+<table>
+<tr><th>Parameter</th><th>Value</th></tr>
+<tr><td>ISA</td><td>RV64IM + Zicsr</td></tr>
+<tr><td>XLEN</td><td>64 bits</td></tr>
+<tr><td>Microarchitecture</td><td>5-stage pipeline (IF/ID/EX/MEM/WB)</td></tr>
+<tr><td>Registers</td><td>32 × 64-bit</td></tr>
+<tr><td><code>x0</code> register</td><td>Hardwired to 0 (writes ignored)</td></tr>
+<tr><td>Instruction memory</td><td>32-bit words (separate)</td></tr>
+<tr><td>Data memory</td><td>64-bit words (separate)</td></tr>
+<tr><td>Address space</td><td>Harvard — separate I-mem and D-mem</td></tr>
+<tr><td>Base address</td><td><code>0x8000_0000</code> (reset PC)</td></tr>
+<tr><td><code>tohost</code></td><td><code>0x8000_1000</code> (tb handshake)</td></tr>
+<tr><td>Forwarding</td><td>2-level (EX/MEM, MEM/WB) + write-first regfile</td></tr>
+<tr><td>Load-use stall</td><td>1 cycle (bubble in EX)</td></tr>
+<tr><td>Branch penalty</td><td>2 cycles (resolved in EX)</td></tr>
+<tr><td>Branch prediction</td><td>None (always not-taken)</td></tr>
+<tr><td>CSRs</td><td>10 registers (mstatus, mtvec, mepc, ...)</td></tr>
+<tr><td>Traps</td><td>ecall (11), ebreak (3), illegal (2)</td></tr>
+</table>
+
+<h3>Block diagram</h3>
+<div class="blockdiag">
+<div class="bdiag-box prim">IF<br><small>Fetch</small></div>
+<div class="bdiag-box prim">ID<br><small>Decode</small></div>
+<div class="bdiag-box prim">EX<br><small>Execute</small></div>
+<div class="bdiag-box prim">MEM<br><small>Memory</small></div>
+<div class="bdiag-box">I-Memory<br><small>32-bit</small></div>
+<div class="bdiag-box">Register File<br><small>32 × 64b</small></div>
+<div class="bdiag-box">ALU<br><small>29 ops</small></div>
+<div class="bdiag-box">D-Memory<br><small>64-bit</small></div>
+<div class="bdiag-box csr">Decoder</div>
+<div class="bdiag-box csr">Forwarding</div>
+<div class="bdiag-box csr">Hazard Unit</div>
+<div class="bdiag-box prim">WB<br><small>Writeback</small></div>
+</div>
+
+<h3>Module hierarchy</h3>
+<pre><code><span class="kw">rv64i_pipe_core</span>         <span class="com">// top-level pipeline</span>
+├── <span class="kw">rv64i_pipe_decoder</span>    <span class="com">// ID stage — instruction decoding</span>
+├── <span class="kw">rv64i_pipe_regfile</span>    <span class="com">// 32 × 64-bit + write-first bypass</span>
+├── <span class="kw">rv64i_pipe_alu</span>        <span class="com">// EX stage — 29 operations</span>
+├── <span class="kw">rv64i_csr</span>             <span class="com">// CSR file + trap logic</span>
+└── <span class="kw">rv64i_mem</span>             <span class="com">// I-mem + D-mem + tohost</span>
+
+<span class="kw">tb_rv64i_pipe</span>            <span class="com">// testbench</span>
+</code></pre>
+</section>
+
+<!-- ============ RTL MODULES ============ -->
+<section id="modules">
+<h2>RTL Modules</h2>
+
+<!-- ALU -->
+<h3 id="alu">ALU — Arithmetic Logic Unit</h3>
+
+<p>
+The ALU (<code>rv64i_pipe_alu</code>) is a combinational block that computes
+the result of an operation in the EX stage. It handles 29 operations: base
+RV64I ALU, the M extension (mul/div), and 32-bit sign-extending variants
+(ADDW/SUBW/SLLW/...).
+</p>
+
+<h4>Operation list</h4>
+<table>
+<tr><th>Code</th><th>Operation</th><th>Description</th></tr>
+<tr><td>0-9</td><td>ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND</td><td>Base RV64I</td></tr>
+<tr><td>10</td><td>PASS</td><td>Pass-through B (for LUI)</td></tr>
+<tr><td>11-15</td><td>ADDW, SUBW, SLLW, SRLW, SRAW</td><td>32-bit + sign-extend</td></tr>
+<tr><td>16-19</td><td>MUL, MULH, MULHSU, MULHU</td><td>Multiply (low/high, signed/unsigned)</td></tr>
+<tr><td>20-23</td><td>DIV, DIVU, REM, REMU</td><td>Divide (signed/unsigned, quotient/remainder)</td></tr>
+<tr><td>24-28</td><td>MULW, DIVW, DIVUW, REMW, REMUW</td><td>W-variants (32-bit + sign-extend)</td></tr>
+</table>
+
+<h4>Key snippet — signed division</h4>
+<pre><code><span class="kw">wire signed</span> [<span class="num">63</span>:<span class="num">0</span>] a_s = a;
+<span class="kw">wire signed</span> [<span class="num">63</span>:<span class="num">0</span>] b_s = b;
+
+<span class="com">// Ternary result type = common type of both branches.</span>
+<span class="com">// If any branch is unsigned, the whole expression becomes unsigned,</span>
+<span class="com">// and Verilator casts a_s/b_s to unsigned before dividing.</span>
+<span class="kw">wire signed</span> [<span class="num">63</span>:<span class="num">0</span>] div_q_s =
+    (b_s == <span class="num">64'sd0</span>) ? -<span class="num">64'sd1</span> :
+    (a_s == <span class="num">64'sh8000000000000000</span> && b_s == -<span class="num">64'sd1</span>) ? <span class="num">64'sh8000000000000000</span> :
+    a_s / b_s;</code></pre>
+
+<div class="callout danger">
+<strong>Signed/unsigned pitfall</strong>
+If we had written <code>? 64'hFFFFFFFFFFFFFFFF : a_s / b_s</code>, the whole
+ternary expression would become <code>unsigned</code> per IEEE 1800, and
+Verilator would cast the operands to unsigned <em>before</em> dividing.
+This is a classic RTL bug — one that formal equivalence checking catches.
+</div>
+
+<h4>Division special cases</h4>
+<table>
+<tr><th>Case</th><th>Result (RISC-V spec)</th></tr>
+<tr><td><code>div x/0</code></td><td><code>-1</code> (all bits set)</td></tr>
+<tr><td><code>divu x/0</code></td><td><code>2^XLEN - 1</code></td></tr>
+<tr><td><code>div INT_MIN / -1</code></td><td><code>INT_MIN</code> (overflow ignored)</td></tr>
+<tr><td><code>rem x/0</code></td><td><code>x</code> (dividend)</td></tr>
+<tr><td><code>rem INT_MIN % -1</code></td><td><code>0</code></td></tr>
+</table>
+
+<!-- REGFILE -->
+<h3 id="regfile">Register File</h3>
+
+<p>
+32 registers, 64 bits each. Register <code>x0</code> is hardwired to zero —
+reads always return 0, writes are ignored. Key feature: <strong>write-first
+bypass</strong>, allowing the register file to return a newly-written value
+in the same cycle it's written.
+</p>
+
+<pre><code><span class="kw">module</span> rv64i_pipe_regfile (
+    <span class="kw">input</span> wire clk, rst,
+    <span class="kw">input</span> wire [<span class="num">4</span>:<span class="num">0</span>] rs1, rs2, rd,
+    <span class="kw">input</span> wire [<span class="num">63</span>:<span class="num">0</span>] wdata,
+    <span class="kw">input</span> wire we,
+    <span class="kw">output</span> wire [<span class="num">63</span>:<span class="num">0</span>] rdata1, rdata2
+);
+    <span class="kw">reg</span> [<span class="num">63</span>:<span class="num">0</span>] regs [<span class="num">0</span>:<span class="num">31</span>];
+    <span class="kw">integer</span> i;
+
+    <span class="kw">always</span> @(<span class="kw">posedge</span> clk) <span class="kw">begin</span>
+        <span class="kw">if</span> (rst) <span class="kw">for</span> (i=<span class="num">0</span>; i&lt;<span class="num">32</span>; i=i+<span class="num">1</span>) regs[i] &lt;= <span class="num">64'd0</span>;
+        <span class="kw">else if</span> (we && rd != <span class="num">5'd0</span>) regs[rd] &lt;= wdata;
+    <span class="kw">end</span>
+
+    <span class="com">// Write-first bypass: ID read in same cycle as WB write</span>
+    <span class="com">// must see the new value. Covers 3-instruction gaps that</span>
+    <span class="com">// 2-level EX/MEM + MEM/WB forwarding cannot reach.</span>
+    <span class="kw">assign</span> rdata1 = (rs1 == <span class="num">5'd0</span>) ? <span class="num">64'd0</span> :
+                    (we && rd == rs1) ? wdata : regs[rs1];
+    <span class="kw">assign</span> rdata2 = (rs2 == <span class="num">5'd0</span>) ? <span class="num">64'd0</span> :
+                    (we && rd == rs2) ? wdata : regs[rs2];
+<span class="kw">endmodule</span></code></pre>
+
+<div class="callout">
+<strong>Why write-first?</strong>
+Without this bypass, the sequence <code>divuw → lui → addi → bne</code>
+(3 instructions between producer and consumer) gives a wrong result.
+Standard EX/MEM + MEM/WB forwarding covers gaps of 1 and 2 instructions,
+but not 3. A write-first regfile costs no extra gates — just a mux on the
+output.
+</div>
+
+<!-- DECODER -->
+<h3 id="decoder">Decoder</h3>
+
+<p>
+The decoder (<code>rv64i_pipe_decoder</code>) is the largest combinational
+block in the project. It takes a 32-bit instruction word and produces ~20
+control signals that steer the rest of the pipeline.
+</p>
+
+<h4>Decoder outputs</h4>
+<table>
+<tr><th>Signal</th><th>Width</th><th>Meaning</th></tr>
+<tr><td><code>rs1</code>, <code>rs2</code>, <code>rd</code></td><td>5</td><td>Register indices</td></tr>
+<tr><td><code>imm</code></td><td>64</td><td>Sign-extended immediate</td></tr>
+<tr><td><code>alu_op</code></td><td>5</td><td>ALU operation code</td></tr>
+<tr><td><code>alu_a_pc</code></td><td>1</td><td>ALU A-input = PC (for AUIPC)</td></tr>
+<tr><td><code>alu_b_imm</code></td><td>1</td><td>ALU B-input = immediate</td></tr>
+<tr><td><code>reg_we</code></td><td>1</td><td>Write to regfile</td></tr>
+<tr><td><code>mem_re</code>, <code>mem_we</code></td><td>1</td><td>Memory read/write</td></tr>
+<tr><td><code>mem_size</code></td><td>2</td><td>Size: 00=byte, 01=half, 10=word, 11=dword</td></tr>
+<tr><td><code>mem_unsigned</code></td><td>1</td><td>Zero-extend instead of sign-extend</td></tr>
+<tr><td><code>pc_sel_imm</code></td><td>1</td><td>PC ← PC + imm (JAL)</td></tr>
+<tr><td><code>pc_sel_alu</code></td><td>1</td><td>PC ← rs1 + imm (JALR)</td></tr>
+<tr><td><code>branch_op</code></td><td>3</td><td>Branch type (BEQ/BNE/BLT/...)</td></tr>
+<tr><td><code>is_csr</code>, <code>csr_op</code>, <code>csr_addr</code></td><td>1+3+12</td><td>CSR operation</td></tr>
+<tr><td><code>is_ecall</code>, <code>is_ebreak</code>, <code>is_mret</code></td><td>1</td><td>System instructions</td></tr>
+<tr><td><code>illegal</code></td><td>1</td><td>Unknown instruction</td></tr>
+</table>
+
+<h4>Immediate formation</h4>
+<p>
+RISC-V has 5 different immediate formats. Each must be sign-extended to XLEN.
+The decoder does this combinationally:
+</p>
+
+<pre><code><span class="com">// I-type: instr[31:20] sign-extended</span>
+<span class="kw">wire</span> [<span class="num">63</span>:<span class="num">0</span>] imm_i = {{<span class="num">52</span>{instr[<span class="num">31</span>]}}, instr[<span class="num">31</span>:<span class="num">20</span>]};
+
+<span class="com">// S-type: instr[31:25] || instr[11:7]</span>
+<span class="kw">wire</span> [<span class="num">63</span>:<span class="num">0</span>] imm_s = {{<span class="num">52</span>{instr[<span class="num">31</span>]}}, instr[<span class="num">31</span>:<span class="num">25</span>], instr[<span class="num">11</span>:<span class="num">7</span>]};
+
+<span class="com">// B-type: {instr[31], instr[7], instr[30:25], instr[11:8], 0}</span>
+<span class="kw">wire</span> [<span class="num">63</span>:<span class="num">0</span>] imm_b = {{<span class="num">51</span>{instr[<span class="num">31</span>]}}, instr[<span class="num">31</span>], instr[<span class="num">7</span>],
+                     instr[<span class="num">30</span>:<span class="num">25</span>], instr[<span class="num">11</span>:<span class="num">8</span>], <span class="num">1'b0</span>};
+
+<span class="com">// J-type: {instr[31], instr[19:12], instr[20], instr[30:21], 0}</span>
+<span class="kw">wire</span> [<span class="num">63</span>:<span class="num">0</span>] imm_j = {{<span class="num">43</span>{instr[<span class="num">31</span>]}}, instr[<span class="num">31</span>], instr[<span class="num">19</span>:<span class="num">12</span>],
+                     instr[<span class="num">20</span>], instr[<span class="num">30</span>:<span class="num">21</span>], <span class="num">1'b0</span>};
+
+<span class="com">// U-type: instr[31:12] &lt;&lt; 12, sign-extended</span>
+<span class="kw">wire</span> [<span class="num">63</span>:<span class="num">0</span>] imm_u = {{<span class="num">32</span>{instr[<span class="num">31</span>]}}, instr[<span class="num">31</span>:<span class="num">12</span>], <span class="num">12'b0</span>};</code></pre>
+
+<div class="callout warn">
+<strong>LUI pitfall in RV64</strong>
+<code>LUI</code> in RV32 does <code>imm &lt;&lt; 12</code> into 32 bits. In RV64
+the result is <strong>sign-extended to 64 bits</strong> — so <code>lui x4, 0x80001</code>
+gives <code>0xFFFFFFFF80001000</code>, not <code>0x0000000080001000</code>.
+This is why our tests use <code>auipc</code> + <code>addi</code> instead of
+<code>lui</code> to load addresses above <code>0x8000_0000</code>.
+</div>
+
+<!-- CSR -->
+<h3 id="csr">CSR — Control Registers and Traps</h3>
+
+<p>
+The CSR module (<code>rv64i_csr</code>) handles 10 control registers, six
+CSR instructions (<code>csrrw</code>, <code>csrrs</code>, <code>csrrc</code>
++ immediate variants), and trap logic.
+</p>
+
+<h4>Implemented CSRs</h4>
+<table>
+<tr><th>Address</th><th>Name</th><th>Description</th></tr>
+<tr><td>0x300</td><td><code>mstatus</code></td><td>Machine status (MIE, MPIE, MPP)</td></tr>
+<tr><td>0x301</td><td><code>misa</code></td><td>ISA: RV64I (read-only)</td></tr>
+<tr><td>0x304</td><td><code>mie</code></td><td>Interrupt enable</td></tr>
+<tr><td>0x305</td><td><code>mtvec</code></td><td>Trap vector base</td></tr>
+<tr><td>0x340</td><td><code>mscratch</code></td><td>Scratch register for handler</td></tr>
+<tr><td>0x341</td><td><code>mepc</code></td><td>Exception PC</td></tr>
+<tr><td>0x342</td><td><code>mcause</code></td><td>Trap cause</td></tr>
+<tr><td>0x343</td><td><code>mtval</code></td><td>Trap value (e.g. address, code)</td></tr>
+<tr><td>0x344</td><td><code>mip</code></td><td>Interrupt pending</td></tr>
+<tr><td>0xF14</td><td><code>mhartid</code></td><td>Hart ID (core 0)</td></tr>
+</table>
+
+<h4>Trap logic</h4>
+<pre><code><span class="kw">always</span> @(<span class="kw">posedge</span> clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (trap_take) <span class="kw">begin</span>
+        mepc_reg   &lt;= trap_pc &amp; ~<span class="num">64'd3</span>;
+        mcause_reg &lt;= trap_cause;
+        mtval_reg  &lt;= trap_tval;
+        <span class="com">// MIE -&gt; MPIE, MIE &lt;- 0 (disable interrupts in handler)</span>
+        mstatus_reg[<span class="num">7</span>]     &lt;= mstatus_reg[<span class="num">3</span>];
+        mstatus_reg[<span class="num">3</span>]     &lt;= <span class="num">1'b0</span>;
+        mstatus_reg[<span class="num">12</span>:<span class="num">11</span>] &lt;= <span class="num">2'b11</span>;  <span class="com">// MPP = M-mode</span>
+    <span class="kw">end</span> <span class="kw">else if</span> (mret) <span class="kw">begin</span>
+        mstatus_reg[<span class="num">3</span>] &lt;= mstatus_reg[<span class="num">7</span>];
+        mstatus_reg[<span class="num">7</span>] &lt;= <span class="num">1'b1</span>;
+        mstatus_reg[<span class="num">12</span>:<span class="num">11</span>] &lt;= <span class="num">2'b11</span>;
+    <span class="kw">end</span> <span class="kw">else if</span> (csr_we) <span class="kw">begin</span>
+        <span class="com">// ... CSR writes</span>
+    <span class="kw">end</span>
+<span class="kw">end</span></code></pre>
+
+<h4>Trap causes</h4>
+<table>
+<tr><th>mcause</th><th>Cause</th><th>Instruction</th></tr>
+<tr><td>2</td><td>Illegal instruction</td><td>unknown, illegal CSR</td></tr>
+<tr><td>3</td><td>Breakpoint</td><td><code>ebreak</code></td></tr>
+<tr><td>11</td><td>Environment call from M-mode</td><td><code>ecall</code></td></tr>
+</table>
+
+<!-- CORE -->
+<h3 id="core">Pipeline Core</h3>
+
+<p>
+The core's top level. It contains 5 stages, 4 pipeline registers (IF/ID,
+ID/EX, EX/MEM, MEM/WB), the forwarding unit, and the hazard detector. Full
+structure below.
+</p>
+
+<pre><code><span class="kw">module</span> rv64i_pipe_core (
+    <span class="kw">input</span>  wire        clk, rst,
+    <span class="kw">output</span> wire [<span class="num">63</span>:<span class="num">0</span>] imem_addr,
+    <span class="kw">input</span>  wire [<span class="num">31</span>:<span class="num">0</span>] imem_data,
+    <span class="kw">output</span> wire [<span class="num">63</span>:<span class="num">0</span>] dmem_addr, dmem_wdata,
+    <span class="kw">output</span> wire        dmem_we, dmem_re,
+    <span class="kw">output</span> wire [<span class="num">1</span>:<span class="num">0</span>]  dmem_size,
+    <span class="kw">input</span>  wire [<span class="num">63</span>:<span class="num">0</span>] dmem_rdata,
+    <span class="kw">output</span> reg         halted,
+    <span class="kw">output</span> wire [<span class="num">63</span>:<span class="num">0</span>] dbg_pc
+);
+    <span class="com">// IF stage</span>
+    <span class="kw">reg</span>  [<span class="num">63</span>:<span class="num">0</span>] pc;
+    <span class="kw">wire</span> [<span class="num">31</span>:<span class="num">0</span>] if_instr = imem_data;
+    <span class="kw">assign</span> imem_addr = pc;
+
+    <span class="com">// IF/ID register</span>
+    <span class="kw">reg</span> [<span class="num">63</span>:<span class="num">0</span>] ifid_pc;
+    <span class="kw">reg</span> [<span class="num">31</span>:<span class="num">0</span>] ifid_instr;
+    <span class="kw">reg</span>        ifid_valid;
+
+    <span class="com">// ID stage → decoder instance</span>
+    <span class="com">// EX stage → ALU + forwarding + branch resolution</span>
+    <span class="com">// MEM stage → memory access</span>
+    <span class="com">// WB stage → writeback to regfile</span>
+    <span class="com">// ...</span>
+<span class="kw">endmodule</span></code></pre>
+
+<!-- MEM -->
+<h3 id="mem">Memory</h3>
+
+<p>
+The <code>rv64i_mem</code> module emulates a Harvard memory: separate
+instruction (32-bit words) and data (64-bit words) ports. It also detects
+writes to <code>tohost</code> at <code>0x8000_1000</code> — the standard
+testbench communication mechanism (the <code>riscv-tests</code> protocol).
+</p>
+
+<pre><code><span class="kw">module</span> rv64i_mem #(
+    <span class="kw">parameter</span> MEM_WORDS = <span class="num">32768</span>,
+    <span class="kw">parameter</span> BASE      = <span class="num">64'h0000_0000_8000_0000</span>
+)(
+    <span class="com">// instruction port</span>
+    <span class="kw">input</span>  wire [<span class="num">63</span>:<span class="num">0</span>] iaddr,
+    <span class="kw">output</span> wire [<span class="num">31</span>:<span class="num">0</span>] idata,
+    <span class="com">// data port</span>
+    <span class="kw">input</span>  wire [<span class="num">63</span>:<span class="num">0</span>] daddr, dwdata,
+    <span class="kw">input</span>  wire        dwe, dre,
+    <span class="kw">input</span>  wire [<span class="num">1</span>:<span class="num">0</span>]  dsize,
+    <span class="kw">output</span> wire [<span class="num">63</span>:<span class="num">0</span>] drdata,
+    <span class="com">// tohost interface</span>
+    <span class="kw">output</span> reg         tohost_we,
+    <span class="kw">output</span> reg  [<span class="num">63</span>:<span class="num">0</span>] tohost_data
+);
+    <span class="kw">reg</span> [<span class="num">31</span>:<span class="num">0</span>] imem [<span class="num">0</span>:MEM_WORDS-<span class="num">1</span>];
+    <span class="kw">reg</span> [<span class="num">63</span>:<span class="num">0</span>] dmem [<span class="num">0</span>:MEM_WORDS-<span class="num">1</span>];
+    <span class="kw">reg</span> [<span class="num">1023</span>:<span class="num">0</span>] hexpath;
+
+    <span class="kw">initial</span> <span class="kw">begin</span>
+        <span class="kw">if</span> ($value$plusargs(<span class="str">"HEX=%s"</span>, hexpath))
+            $readmemh(hexpath, imem);
+    <span class="kw">end</span>
+    <span class="com">// ...</span>
+<span class="kw">endmodule</span></code></pre>
+
+<div class="callout success">
+<strong><code>tohost</code> convention</strong>
+Program writes <code>1</code> to <code>0x8000_1000</code> = PASS.
+Value <code>&gt; 1</code> = number of the failing test. This is the standard
+used by <code>riscv-tests</code> and <code>riscv-arch-test</code> — if our
+core supports it, it will be compatible with the official test suites.
+</div>
+</section>
+
+<!-- ============ PIPELINE ============ -->
+<section id="pipeline">
+<h2>Pipeline In Depth</h2>
+
+<p>
+The classic 5-stage RISC pipeline. Each stage does one thing and passes its
+result to the next through a pipeline register. In one clock cycle, 5
+instructions are at different stages of completion.
+</p>
+
+<div class="pipeline">
+  <div class="pstage if"><span class="num">1</span><span class="name">IF</span><span class="desc">Fetch — get instruction from I-mem</span></div>
+  <div class="parrow">→</div>
+  <div class="pstage id"><span class="num">2</span><span class="name">ID</span><span class="desc">Decode — decode, read registers</span></div>
+  <div class="parrow">→</div>
+  <div class="pstage ex"><span class="num">3</span><span class="name">EX</span><span class="desc">Execute — ALU, branch, CSR</span></div>
+  <div class="parrow">→</div>
+  <div class="pstage mem"><span class="num">4</span><span class="name">MEM</span><span class="desc">Memory — load/store</span></div>
+  <div class="parrow">→</div>
+  <div class="pstage wb"><span class="num">5</span><span class="name">WB</span><span class="desc">Writeback — write to regfile</span></div>
+</div>
+
+<h3 id="if">IF — Instruction Fetch</h3>
+
+<p>
+The IF stage fetches a 32-bit instruction from memory at address <code>pc</code>.
+In the same cycle it computes <code>pc + 4</code> as the default next PC.
+</p>
+
+<pre><code><span class="kw">reg</span>  [<span class="num">63</span>:<span class="num">0</span>] pc;
+<span class="kw">wire</span> [<span class="num">31</span>:<span class="num">0</span>] if_instr = imem_data;
+<span class="kw">assign</span> imem_addr = pc;
+
+<span class="kw">always</span> @(<span class="kw">posedge</span> clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (ex_redirect)       pc &lt;= ex_redirect_target;
+    <span class="kw">else if</span> (!stall)        pc &lt;= pc + <span class="num">64'd4</span>;
+<span class="kw">end</span></code></pre>
+
+<p>
+Two things can change PC:
+</p>
+<ul>
+<li><strong>Redirect</strong> — branch taken, JAL/JALR, trap, mret</li>
+<li><strong>Stall</strong> — load-use hazard, PC freezes</li>
+</ul>
+
+<h3 id="id">ID — Instruction Decode</h3>
+
+<p>
+The decoder translates the 32-bit instruction into control signals. At the
+same time, the register file reads <code>rs1</code> and <code>rs2</code>.
+Results are latched into the <code>IF/ID → ID/EX</code> register.
+</p>
+
+<pre><code><span class="kw">always</span> @(<span class="kw">posedge</span> clk) <span class="kw">begin</span>
+    <span class="kw">if</span> (flush || stall) <span class="kw">begin</span>
+        <span class="com">// bubble — clear all control signals</span>
+        idex_reg_we &lt;= <span class="num">1'b0</span>;
+        idex_mem_re &lt;= <span class="num">1'b0</span>;
+        idex_mem_we &lt;= <span class="num">1'b0</span>;
+        <span class="com">// ...</span>
+    <span class="kw">end</span> <span class="kw">else</span> <span class="kw">begin</span>
+        idex_pc      &lt;= ifid_pc;
+        idex_rs1_val &lt;= id_rs1_val;
+        idex_rs2_val &lt;= id_rs2_val;
+        idex_imm     &lt;= id_imm;
+        idex_alu_op  &lt;= id_alu_op;
+        <span class="com">// ...</span>
+    <span class="kw">end</span>
+<span class="kw">end</span></code></pre>
+
+<h3 id="ex">EX — Execute</h3>
+
+<p>
+The EX stage does the most work: ALU, branch resolution, CSR access, trap
+detection. Forwarding also happens here — data from <code>EX/MEM</code> and
+<code>MEM/WB</code> can be used instead of reading from the regfile.
+</p>
+
+<h4>Forwarding (priority EX/MEM &gt; MEM/WB &gt; regfile)</h4>
+<pre><code><span class="kw">wire</span> fwd_a_exmem = exmem_reg_we &amp;&amp; (exmem_rd != <span class="num">5'd0</span>) &amp;&amp; (exmem_rd == idex_rs1);
+<span class="kw">wire</span> fwd_b_exmem = exmem_reg_we &amp;&amp; (exmem_rd != <span class="num">5'd0</span>) &amp;&amp; (exmem_rd == idex_rs2);
+<span class="kw">wire</span> fwd_a_memwb = memwb_reg_we &amp;&amp; (memwb_rd != <span class="num">5'd0</span>) &amp;&amp; (memwb_rd == idex_rs1) &amp;&amp; !fwd_a_exmem;
+<span class="kw">wire</span> fwd_b_memwb = memwb_reg_we &amp;&amp; (memwb_rd != <span class="num">5'd0</span>) &amp;&amp; (memwb_rd == idex_rs2) &amp;&amp; !fwd_b_exmem;
+
+<span class="kw">wire</span> [<span class="num">63</span>:<span class="num">0</span>] ex_rs1 = fwd_a_exmem ? exmem_alu_y : fwd_a_memwb ? wb_wdata : idex_rs1_val;
+<span class="kw">wire</span> [<span class="num">63</span>:<span class="num">0</span>] ex_rs2 = fwd_b_exmem ? exmem_alu_y : fwd_b_memwb ? wb_wdata : idex_rs2_val;</code></pre>
+
+<h4>Branch resolution</h4>
+<pre><code><span class="kw">always</span> @(*) <span class="kw">begin</span>
+    <span class="kw">case</span> (idex_branch_op)
+        <span class="num">3'b001</span>: ex_branch_taken = (ex_rs1 == ex_rs2);              <span class="com">// BEQ</span>
+        <span class="num">3'b010</span>: ex_branch_taken = (ex_rs1 != ex_rs2);              <span class="com">// BNE</span>
+        <span class="num">3'b011</span>: ex_branch_taken = ($signed(ex_rs1) &lt; $signed(ex_rs2)); <span class="com">// BLT</span>
+        <span class="num">3'b100</span>: ex_branch_taken = ($signed(ex_rs1) &gt;= $signed(ex_rs2)); <span class="com">// BGE</span>
+        <span class="num">3'b101</span>: ex_branch_taken = (ex_rs1 &lt; ex_rs2);              <span class="com">// BLTU</span>
+        <span class="num">3'b110</span>: ex_branch_taken = (ex_rs1 &gt;= ex_rs2);             <span class="com">// BGEU</span>
+        <span class="kw">default</span>:ex_branch_taken = <span class="num">1'b0</span>;
+    <span class="kw">endcase</span>
+<span class="kw">end</span></code></pre>
+
+<div class="callout warn">
+<strong>Branch penalty = 2 cycles</strong>
+Resolving the branch in EX means the 2 instructions fetched after the branch
+(in IF and ID) are wrong if the branch is taken — they must be flushed.
+This is the cost of 2 cycles per taken branch. Production cores resolve the
+branch earlier (in ID) or use branch prediction to reduce this cost.
+</div>
+
+<h3 id="mem-stage">MEM — Memory</h3>
+
+<p>
+Data memory access. Only load/store instructions do anything here — for
+the others, it just "passes through" the ALU result.
+</p>
+
+<pre><code><span class="kw">assign</span> dmem_addr  = exmem_alu_y;
+<span class="kw">assign</span> dmem_wdata = exmem_rs2_val;
+<span class="kw">assign</span> dmem_we    = exmem_mem_we;
+<span class="kw">assign</span> dmem_re    = exmem_mem_re;
+<span class="kw">assign</span> dmem_size  = exmem_mem_size;</code></pre>
+
+<h3 id="wb">WB — Writeback</h3>
+
+<p>
+Write the result to the register file. The result can come from three
+sources:
+</p>
+<ul>
+<li><strong>ALU</strong> — for arithmetic operations</li>
+<li><strong>Memory</strong> — for load (with sign/zero extension)</li>
+<li><strong>CSR</strong> — for CSR instructions</li>
+</ul>
+
+<pre><code><span class="kw">assign</span> wb_wdata = memwb_is_csr ? memwb_csr_rdata :
+                  memwb_mem_re ? wb_load_ext : memwb_alu_y;
+<span class="kw">assign</span> wb_we    = memwb_reg_we;
+<span class="kw">assign</span> wb_rd    = memwb_rd;</code></pre>
+</section>
+
+<!-- ============ HAZARDS ============ -->
+<section id="hazards">
+<h2>Hazards and Forwarding</h2>
+
+<h3>RAW (Read After Write) — data hazard</h3>
+
+<p>
+The most common hazard: an instruction wants to read a register that has not
+yet been written by a previous instruction (because it is in EX/MEM, not WB).
+</p>
+
+<pre><code><span class="com"># RAW example</span>
+<span class="kw">add</span>  x1, x2, x3   <span class="com"># x1 ready after WB</span>
+<span class="kw">add</span>  x4, x1, x5   <span class="com"># but needed already in EX → forwarding!</span></code></pre>
+
+<p>
+Solution: <strong>forwarding</strong> (data bypass). The result from EX/MEM
+or MEM/WB is fed directly to the ALU input, instead of waiting for WB.
+</p>
+
+<h3>Load-use hazard</h3>
+
+<p>
+Special case: a <code>load</code> instruction has its result only after MEM,
+so even forwarding is not enough. The pipeline must <strong>stall for
+1 cycle</strong> (insert a bubble).
+</p>
+
+<pre><code><span class="com"># Load-use — requires stall</span>
+<span class="kw">ld</span>   x1, 0(x2)     <span class="com"># load</span>
+<span class="kw">add</span>  x3, x1, x4    <span class="com"># uses x1 — must wait 1 cycle</span></code></pre>
+
+<pre><code><span class="kw">wire</span> load_use_hazard =
+    idex_mem_re &amp;&amp; (idex_rd != <span class="num">5'd0</span>) &amp;&amp; ifid_valid &amp;&amp;
+    ((idex_rd == id_rs1) || (idex_rd == id_rs2));
+
+<span class="kw">wire</span> stall = load_use_hazard;</code></pre>
+
+<div class="callout">
+<strong>Stall = bubble in EX</strong>
+When <code>stall=1</code>, the ID/EX register writes a bubble (all control
+signals to 0). This guarantees the EX stage executes a <code>NOP</code>
+instead of re-executing the same instruction.
+</div>
+
+<h3>Control hazard</h3>
+
+<p>
+Branch resolved in EX, so the instructions fetched in IF and ID (after the
+branch) are wrong if the branch is taken. They must be <strong>flushed</strong> —
+zero <code>ifid_valid</code> and the control signals in ID/EX.
+</p>
+
+<pre><code><span class="kw">wire</span> ex_redirect = ex_trap_take || ex_mret_take
+                   || idex_is_jump || (idex_is_branch &amp;&amp; ex_branch_taken);
+<span class="kw">wire</span> flush = ex_redirect;</code></pre>
+
+<h3>Write-first regfile — 3-instr gap</h3>
+
+<p>
+Standard forwarding covers gaps of 1 and 2 instructions. A 3-instruction
+gap (e.g. <code>divuw → lui → addi → bne</code>) requires a
+<strong>write-first regfile</strong> or a third level of forwarding.
+</p>
+
+<pre><code><span class="kw">assign</span> rdata1 = (rs1 == <span class="num">5'd0</span>) ? <span class="num">64'd0</span> :
+                (we &amp;&amp; rd == rs1) ? wdata : regs[rs1];</code></pre>
+
+<h3>Summary — what to do when</h3>
+<table>
+<tr><th>Situation</th><th>Action</th><th>Cost</th></tr>
+<tr><td>RAW, gap 1 or 2</td><td>Forwarding EX/MEM or MEM/WB</td><td>0 cycles</td></tr>
+<tr><td>RAW, gap 3</td><td>Write-first regfile</td><td>0 cycles</td></tr>
+<tr><td>Load-use</td><td>Stall 1 cycle (bubble)</td><td>1 cycle</td></tr>
+<tr><td>Branch taken</td><td>Flush IF and ID</td><td>2 cycles</td></tr>
+<tr><td>JAL / JALR</td><td>Flush IF and ID</td><td>2 cycles</td></tr>
+<tr><td>Trap / mret</td><td>Flush + redirect to mtvec/mepc</td><td>2 cycles</td></tr>
+</table>
+</section>
+
+<!-- ============ TRAPS ============ -->
+<section id="traps">
+<h2>CSR and Traps — in Practice</h2>
+
+<p>
+RISC-V's trap handling is unified — all exceptions go through the same
+mechanism:
+</p>
+
+<ol>
+<li>Processor writes <code>mepc</code> ← current PC</li>
+<li>Writes <code>mcause</code> ← cause code</li>
+<li>Writes <code>mtval</code> ← additional info (e.g. instruction code)</li>
+<li>Sets <code>mstatus.MPIE ← mstatus.MIE</code>, <code>MIE ← 0</code></li>
+<li>Jumps to <code>mtvec</code> (handler address)</li>
+</ol>
+
+<p>
+Return via <code>mret</code>:
+</p>
+<ol>
+<li><code>mstatus.MIE ← mstatus.MPIE</code></li>
+<li><code>mstatus.MPIE ← 1</code></li>
+<li>PC ← <code>mepc</code></li>
+</ol>
+
+<h3>Example — ecall handler</h3>
+<pre><code>handler:
+    <span class="kw">addi</span> a0, a0, 1        <span class="com"># increment counter</span>
+    <span class="kw">csrr</span> t0, mepc
+    <span class="kw">addi</span> t0, t0, 4        <span class="com"># skip ecall (PC += 4)</span>
+    <span class="kw">csrw</span> mepc, t0
+    <span class="kw">mret</span>                  <span class="com"># return</span></code></pre>
+
+<div class="callout success">
+<strong>Test <code>trap.S</code> — PASS</strong>
+The test verifies: CSR read/write round-trip (<code>mscratch</code>),
+<code>ecall</code> → handler → <code>mret</code>, and check that
+<code>mcause = 11</code> after return. All conditions passed on RTL.
+</div>
+</section>
+
+<!-- ============ ISA ============ -->
+<section id="isa">
+<h2>Instruction Set</h2>
+
+<h3>RV64I — base</h3>
+<table>
+<tr><th>Category</th><th>Instructions</th></tr>
+<tr><td>U-type</td><td><code>LUI</code>, <code>AUIPC</code></td></tr>
+<tr><td>J-type</td><td><code>JAL</code></td></tr>
+<tr><td>I-type jump</td><td><code>JALR</code></td></tr>
+<tr><td>Branch</td><td><code>BEQ</code>, <code>BNE</code>, <code>BLT</code>, <code>BGE</code>, <code>BLTU</code>, <code>BGEU</code></td></tr>
+<tr><td>Load</td><td><code>LB</code>, <code>LH</code>, <code>LW</code>, <code>LD</code>, <code>LBU</code>, <code>LHU</code>, <code>LWU</code></td></tr>
+<tr><td>Store</td><td><code>SB</code>, <code>SH</code>, <code>SW</code>, <code>SD</code></td></tr>
+<tr><td>ALU reg-reg</td><td><code>ADD</code>, <code>SUB</code>, <code>SLL</code>, <code>SLT</code>, <code>SLTU</code>, <code>XOR</code>, <code>SRL</code>, <code>SRA</code>, <code>OR</code>, <code>AND</code></td></tr>
+<tr><td>ALU imm</td><td><code>ADDI</code>, <code>SLTI</code>, <code>SLTIU</code>, <code>XORI</code>, <code>ORI</code>, <code>ANDI</code>, <code>SLLI</code>, <code>SRLI</code>, <code>SRAI</code></td></tr>
+<tr><td>32-bit (W)</td><td><code>ADDIW</code>, <code>SLLIW</code>, <code>SRLIW</code>, <code>SRAIW</code>, <code>ADDW</code>, <code>SUBW</code>, <code>SLLW</code>, <code>SRLW</code>, <code>SRAW</code></td></tr>
+<tr><td>Fence</td><td><code>FENCE</code>, <code>FENCE.I</code></td></tr>
+<tr><td>System</td><td><code>ECALL</code>, <code>EBREAK</code></td></tr>
+</table>
+
+<h3>RV64M — multiply/divide</h3>
+<table>
+<tr><th>Instruction</th><th>Description</th></tr>
+<tr><td><code>MUL</code></td><td>Low 64 bits of 128-bit product (signed×signed)</td></tr>
+<tr><td><code>MULH</code></td><td>High 64 bits, signed×signed</td></tr>
+<tr><td><code>MULHSU</code></td><td>High 64 bits, signed×unsigned</td></tr>
+<tr><td><code>MULHU</code></td><td>High 64 bits, unsigned×unsigned</td></tr>
+<tr><td><code>DIV</code>, <code>DIVU</code></td><td>Quotient, signed / unsigned</td></tr>
+<tr><td><code>REM</code>, <code>REMU</code></td><td>Remainder, signed / unsigned</td></tr>
+<tr><td><code>MULW</code></td><td>Low 32 bits + sign-extend</td></tr>
+<tr><td><code>DIVW</code>, <code>DIVUW</code></td><td>32-bit divide + sign-extend</td></tr>
+<tr><td><code>REMW</code>, <code>REMUW</code></td><td>32-bit remainder + sign-extend</td></tr>
+</table>
+
+<h3>Zicsr — CSR</h3>
+<table>
+<tr><th>Instruction</th><th>Description</th></tr>
+<tr><td><code>CSRRW</code></td><td>CSR ← rs1, rd ← old CSR value</td></tr>
+<tr><td><code>CSRRS</code></td><td>CSR |= rs1, rd ← old value</td></tr>
+<tr><td><code>CSRRC</code></td><td>CSR &amp;= ~rs1, rd ← old value</td></tr>
+<tr><td><code>CSRRWI</code></td><td>CSR ← zimm (5-bit immediate)</td></tr>
+<tr><td><code>CSRRSI</code></td><td>CSR |= zimm</td></tr>
+<tr><td><code>CSRRCI</code></td><td>CSR &amp;= ~zimm</td></tr>
+<tr><td><code>MRET</code></td><td>Return from trap</td></tr>
+</table>
+
+<p class="callout">
+<strong>Pseudo-instructions</strong>
+<code>csrr t0, mcause</code> is an alias of <code>csrrs t0, mcause, x0</code>.
+<code>csrw mtvec, t0</code> is an alias of <code>csrrw x0, mtvec, t0</code>.
+The assembler translates them automatically.
+</p>
+</section>
+
+<!-- ============ WORKFLOW ============ -->
+<section id="workflow">
+<h2>Workflow — from Assembler to Simulation</h2>
+
+<p>
+The path from <code>.S</code> source to a working test on RTL:
+</p>
+
+<pre><code><span class="com">┌──────────────────────────────────────────────────────────────┐</span>
+<span class="com">│  1. test.S         (RISC-V assembly source)                  │</span>
+<span class="com">│       ↓ riscv64-linux-gnu-gcc -march=rv64im_zicsr ...        │</span>
+<span class="com">│  2. test.elf       (ELF with symbols)                        │</span>
+<span class="com">│       ↓ riscv64-linux-gnu-objcopy -O binary                  │</span>
+<span class="com">│  3. test.bin       (raw binary, little-endian)               │</span>
+<span class="com">│       ↓ xxd -p -c4 / python3 (byte-swap)                     │</span>
+<span class="com">│  4. test.hex       (32-bit hex words, one per line)          │</span>
+<span class="com">│       ↓ Verilator + $readmemh                                │</span>
+<span class="com">│  5. obj_dir/Vtb_rv64i_pipe                                   │</span>
+<span class="com">│       ↓ +HEX=test.hex                                        │</span>
+<span class="com">│  6. [tohost] value=0x...  →  PASS/FAIL                       │</span>
+<span class="com">└──────────────────────────────────────────────────────────────┘</span></code></pre>
+
+<h3>GCC flags — why each is needed</h3>
+<table>
+<tr><th>Flag</th><th>Purpose</th></tr>
+<tr><td><code>-march=rv64im_zicsr</code></td><td>RV64I + M + Zicsr (newer GCC requires _zicsr for CSR)</td></tr>
+<tr><td><code>-mabi=lp64</code></td><td>64-bit ABI, no F/D</td></tr>
+<tr><td><code>-mcmodel=medany</code></td><td>PC-relative (auipc+addi) instead of lui — <strong>critical for addresses 0x8000_0000+</strong></td></tr>
+<tr><td><code>-fno-pic</code></td><td>No PIC — doesn't generate GOT access</td></tr>
+<tr><td><code>-mno-relax</code></td><td>No linker relaxation (simpler)</td></tr>
+<tr><td><code>-nostdlib -nostartfiles</code></td><td>No libc, no crt0 — we have our own <code>_start</code></td></tr>
+<tr><td><code>-T link.ld</code></td><td>Linker script with <code>_start</code> @ <code>0x8000_0000</code></td></tr>
+</table>
+
+<div class="callout danger">
+<strong>Pitfall — <code>la</code> generates GOT access</strong>
+Without <code>-fno-pic -mcmodel=medany</code> + <code>.hidden tohost</code>,
+the pseudo-instruction <code>la t0, tohost</code> generates a GOT access
+(<code>auipc + ld</code>), and the GOT in a non-relocated binary is garbage.
+This leads to a silent timeout. We saw this — <code>t0</code> got
+<code>0</code> instead of <code>0x80001000</code>.
+</div>
+
+<h3>bin → hex conversion (byte-swap)</h3>
+<p>
+RISC-V memory is little-endian, but <code>$readmemh</code> reads 32-bit words.
+Must convert <code>13 05 50 00</code> (4 bytes) into <code>00500513</code>
+(one 32-bit word).
+</p>
+
+<pre><code><span class="kw">python3</span> - <span class="str">"$BASE.bin"</span> &gt; <span class="str">"$BASE.hex"</span> &lt;&lt;'PY'
+<span class="kw">import</span> sys
+d = open(sys.argv[<span class="num">1</span>],<span class="str">'rb'</span>).read()
+<span class="kw">while</span> len(d) % <span class="num">4</span>: d += b<span class="str">'\x00'</span>
+<span class="kw">for</span> i <span class="kw">in</span> range(<span class="num">0</span>, len(d), <span class="num">4</span>):
+    print(f<span class="str">'{int.from_bytes(d[i:i+4], "little"):08x}'</span>)
+PY</code></pre>
+</section>
+
+<!-- ============ TESTS ============ -->
+<section id="tests">
+<h2>Tests</h2>
+
+<p>
+Current regression test suite. Each test uses the convention
+<code>tohost = 1</code> as PASS, <code>&gt; 1</code> as fail number.
+</p>
+
+<table>
+<tr><th>File</th><th>Coverage</th><th>Fail codes</th><th>Status</th></tr>
+<tr>
+  <td><code>test.S</code></td>
+  <td>ADD, BNE, SD — smoke test</td>
+  <td>—</td>
+  <td><span class="badge-pass">PASS</span></td>
+</tr>
+<tr>
+  <td><code>alu.S</code></td>
+  <td>ADD, SUB, AND, OR, XOR, SLL, SRL, SRA, SLT, SLTU, ADDI, SLLI, ADDW, SUBW, SLLW, SRLW, SRAW</td>
+  <td>11–27</td>
+  <td><span class="badge-pass">PASS</span></td>
+</tr>
+<tr>
+  <td><code>mem.S</code></td>
+  <td>SD, LD, SW, LW, LWU, SH, LH, LHU, SB, LB, LBU</td>
+  <td>31–37</td>
+  <td><span class="badge-pass">PASS</span></td>
+</tr>
+<tr>
+  <td><code>mul.S</code></td>
+  <td>MUL, MULH, MULHU, MULHSU, DIV, DIVU, REM, REMU, MULW, DIVW, DIVUW, REMUW + edge cases (INT_MIN/-1, x/0)</td>
+  <td>101–115</td>
+  <td><span class="badge-pass">PASS</span></td>
+</tr>
+<tr>
+  <td><code>hazard.S</code></td>
+  <td>RAW chain, load-use, EX/MEM and MEM/WB forwarding</td>
+  <td>301–303</td>
+  <td><span class="badge-pass">PASS</span></td>
+</tr>
+<tr>
+  <td><code>trap.S</code></td>
+  <td>CSR round-trip, ecall, mret, mcause=11</td>
+  <td>201–203</td>
+  <td><span class="badge-pass">PASS</span></td>
+</tr>
+</table>
+
+<h3>Running</h3>
+<pre><code><span class="com"># single test</span>
+./run_pipe.sh test.S
+
+<span class="com"># full regression</span>
+<span class="kw">for</span> t <span class="kw">in</span> test alu mem mul hazard trap; <span class="kw">do</span>
+    ./run_pipe.sh $t.S
+<span class="kw">done</span></code></pre>
+
+<h3>Next steps for testing</h3>
+<ul>
+<li><strong>Golden trace vs QEMU</strong> — same program on QEMU and RTL, diff trace</li>
+<li><strong><code>riscv-arch-test</code> via RISCOF</strong> — official ISA certification</li>
+<li><strong>Constrained-random</strong> — <code>riscv-dv</code> generating thousands of random sequences</li>
+<li><strong>Formal</strong> — SymbiYosys + RVFI (RISC-V Formal Interface)</li>
+</ul>
+</section>
+
+<!-- ============ ROADMAP ============ -->
+<section id="roadmap">
+<h2>Roadmap</h2>
+
+<h3>What we have <span class="badge-pass">DONE</span></h3>
+<ul>
+<li>RV64I base</li>
+<li>RV64M extension</li>
+<li>Zicsr (10 CSRs)</li>
+<li>Traps (ecall, ebreak, illegal)</li>
+<li>mret</li>
+<li>5-stage pipeline with forwarding</li>
+<li>Load-use stall + write-first regfile</li>
+<li>Assembly test suite (6 files)</li>
+</ul>
+
+<h3>What's next <span class="badge-wip">WIP</span></h3>
+<table>
+<tr><th>#</th><th>Feature</th><th>Enables</th><th>Difficulty</th></tr>
+<tr><td>1</td><td>UART 16550 (<code>0x1000_0000</code>)</td><td>printf, debug output</td><td>⭐</td></tr>
+<tr><td>2</td><td>CLINT — mtime/mtimecmp (<code>0x0200_0000</code>)</td><td>sleep, delay</td><td>⭐</td></tr>
+<tr><td>3</td><td>Timer interrupt (mie.MTIE)</td><td>preemption, scheduler</td><td>⭐⭐</td></tr>
+<tr><td>4</td><td>PLIC — external IRQ</td><td>keyboard, timer, disk</td><td>⭐⭐</td></tr>
+<tr><td>5</td><td>S-mode + <code>sret</code></td><td>kernel/user separation</td><td>⭐⭐⭐</td></tr>
+<tr><td>6</td><td>Sv39 MMU + TLB</td><td>virtual memory, processes</td><td>⭐⭐⭐⭐</td></tr>
+<tr><td>7</td><td>RV64A (atomics)</td><td>multithreading, locking</td><td>⭐⭐</td></tr>
+<tr><td>8</td><td>RV64F/D (float)</td><td>userspace, compiler</td><td>⭐⭐⭐⭐</td></tr>
+</table>
+
+<h3>Target architecture</h3>
+<p>
+The goal is a core compatible with the <strong>QEMU <code>-M virt</code></strong>
+platform, allowing the same OS to run on:
+</p>
+<ul>
+<li><strong>QEMU</strong> — fast prototyping (on x86_64)</li>
+<li><strong>Own RTL</strong> — Verilator simulation</li>
+<li><strong>FPGA</strong> — real hardware (Artix-7 / ECP5)</li>
+<li><strong>Silicon</strong> — if it ever goes to tape-out</li>
+</ul>
+
+<p>
+Key: <strong>identical peripheral addresses</strong>. UART @ <code>0x1000_0000</code>,
+CLINT @ <code>0x0200_0000</code>, PLIC @ <code>0x0C00_0000</code> — exactly
+like QEMU <code>virt</code>. Then <code>uart_putc</code> in the OS works
+unchanged on all platforms.
+</p>
+
+<h3>Golden trace — the foundation of verification</h3>
+<pre><code><span class="com"># 1. Run on QEMU, save trace</span>
+qemu-system-riscv64 -M virt -bios none -kernel test.elf \
+    -d in_asm,cpu -D qemu.trace -nographic
+
+<span class="com"># 2. Run on RTL, save trace (extend tb with $fdisplay)</span>
+./obj_dir/Vtb_rv64i_soc +HEX=test.hex &gt; rtl.trace
+
+<span class="com"># 3. Diff</span>
+python3 scripts/diff_qemu.py qemu.trace rtl.trace</code></pre>
+</section>
+
+<!-- ============ REFERENCES ============ -->
+<section id="references">
+<h2>References</h2>
+
+<h3>Specifications</h3>
+<ul>
+<li><strong>RISC-V ISA Manual (Vol I: Unprivileged)</strong> — <a href="https://riscv.org/technical/specifications/" target="_blank">riscv.org/technical/specifications</a></li>
+<li><strong>RISC-V Privileged Spec</strong> — CSRs, traps, privilege modes</li>
+<li><strong>IEEE 1800-2023</strong> — SystemVerilog LRM (for signed/unsigned semantics)</li>
+</ul>
+
+<h3>Tools</h3>
+<ul>
+<li><strong>Verilator</strong> — <a href="https://verilator.org" target="_blank">verilator.org</a> — fast RTL → C++ simulation</li>
+<li><strong>Yosys</strong> — open-source synthesis</li>
+<li><strong>SymbiYosys</strong> — formal verification</li>
+<li><strong>GTKWave</strong> — waveform viewer (VCD)</li>
+<li><strong>riscv64-linux-gnu-gcc</strong> — RISC-V toolchain</li>
+<li><strong>QEMU</strong> — system emulator</li>
+</ul>
+
+<h3>Reference models and tests</h3>
+<ul>
+<li><strong>Spike</strong> — official reference ISS</li>
+<li><strong>riscv-tests</strong> — <a href="https://github.com/riscv-software-src/riscv-tests" target="_blank">github.com/riscv-software-src/riscv-tests</a></li>
+<li><strong>riscv-arch-test</strong> — <a href="https://github.com/riscv-non-isa/riscv-arch-test" target="_blank">github.com/riscv-non-isa/riscv-arch-test</a></li>
+<li><strong>RISCOF</strong> — ISA certification framework</li>
+<li><strong>riscv-dv</strong> — constrained-random generator</li>
+</ul>
+
+<h3>Literature</h3>
+<ul>
+<li><em>Computer Organization and Design: RISC-V Edition</em> — Patterson &amp; Hennessy</li>
+<li><em>The RISC-V Reader</em> — Patterson &amp; Waterman (free)</li>
+<li><em>Digital Design and Computer Architecture: RISC-V Edition</em> — Harris &amp; Harris</li>
+</ul>
+
+<hr>
+<p style="text-align:center; color:var(--muted); font-size:13px; margin-top:40px;">
+RV64I Pipeline — Technical Documentation · Version 0.1 · 2026<br>
+Core: <span class="mono">RV64IM_Zicsr</span> · 5-stage pipeline · Verilator + riscv64-linux-gnu-gcc
+</p>
+</section>
+
+</main>
+
+<script>
+// Highlight active nav link on scroll
+const sections = document.querySelectorAll('section[id], h3[id]');
+const navLinks = document.querySelectorAll('#sidebar nav a');
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            const id = entry.target.id;
+            navLinks.forEach(link => {
+                link.classList.toggle('active', link.getAttribute('href') === '#' + id);
+            });
+        }
+    });
+}, { rootMargin: '-40% 0px -55% 0px' });
+sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>
+HTMLEOF
+echo "OK: docs/index.html (English) created"
+ls -la docs/index.html

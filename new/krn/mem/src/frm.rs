@@ -45,7 +45,7 @@ use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::ops::{Add, Deref, DerefMut, Sub};
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 // ============================================================================
 // 1. Locks — self-contained, no external crates
@@ -643,6 +643,31 @@ impl<S: PageSize> fmt::Debug for PhysFrame<S> {
     }
 }
 
+
+/// Errors from frame allocator operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameError {
+    Misaligned { addr: usize, align: usize },
+    OutOfMemory,
+    InvalidFrame { addr: usize },
+    DoubleFree { addr: usize },
+    BitmapError(crate::map::BitmapError),
+    NotInitialized,
+}
+
+impl fmt::Display for FrameError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Misaligned { addr, align } => write!(f, "misaligned {:#x} (align {})", addr, align),
+            Self::OutOfMemory => write!(f, "out of memory"),
+            Self::InvalidFrame { addr } => write!(f, "invalid frame {:#x}", addr),
+            Self::DoubleFree { addr } => write!(f, "double free {:#x}", addr),
+            Self::BitmapError(e) => write!(f, "bitmap: {}", e),
+            Self::NotInitialized => write!(f, "not initialized"),
+        }
+    }
+}
+
 impl<S: PageSize> PhysFrame<S> {
     /// Creates a frame from an `S`-aligned start address.
     ///
@@ -1049,3 +1074,173 @@ impl<S: PageSize> DoubleEndedIterator for PhysFrameRangeInclusive<S> {
 }
 
 impl<S: PageSize> ExactSizeIterator for PhysFrameRangeInclusive<S> {}
+
+// ============================================================================
+// AllocatorStats & FragmentationReport
+// ============================================================================
+
+/// Statistics for a frame allocator.
+#[derive(Debug, Clone, Copy)]
+pub struct AllocatorStats {
+    pub name: &'static str,
+    pub total_frames: usize,
+    pub allocated_frames: usize,
+    pub free_frames: usize,
+}
+
+impl fmt::Display for AllocatorStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Frame Allocator: {}", self.name)?;
+        writeln!(f, "  Total:     {}", self.total_frames)?;
+        writeln!(f, "  Allocated: {}", self.allocated_frames)?;
+        writeln!(f, "  Free:      {}", self.free_frames)
+    }
+}
+
+/// Fragmentation report for bitmap analysis.
+#[derive(Debug, Clone, Copy)]
+pub struct FragmentationReport {
+    pub total_frames: usize,
+    pub allocated_frames: usize,
+    pub free_frames: usize,
+    pub largest_free_block: usize,
+    pub free_block_count: usize,
+    pub fragmentation_index: f64,
+}
+
+impl fmt::Display for FragmentationReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Fragmentation Report:")?;
+        writeln!(f, "  Total frames:     {}", self.total_frames)?;
+        writeln!(f, "  Allocated frames: {}", self.allocated_frames)?;
+        writeln!(f, "  Free frames:      {}", self.free_frames)?;
+        writeln!(f, "  Largest free:     {}", self.largest_free_block)?;
+        writeln!(f, "  Free blocks:      {}", self.free_block_count)?;
+        writeln!(f, "  Fragmentation:    {:.4}", self.fragmentation_index)
+    }
+}
+
+// ============================================================================
+// PhysicalFrameAllocator
+// ============================================================================
+
+/// SMP-safe physical frame allocator backed by a bitmap.
+pub struct PhysicalFrameAllocator<S: PageSize> {
+    name: &'static str,
+    total_frames: usize,
+    allocated_frames: AtomicUsize,
+    bitmap: IrqSpinlock<crate::map::BitmapLayout>,
+    _marker: PhantomData<S>,
+}
+
+impl<S: PageSize> PhysicalFrameAllocator<S> {
+    /// Creates a new frame allocator.
+    ///
+    /// # Safety
+    /// `bitmap_words` must be a valid, exclusively owned mutable slice.
+    /// `bitmap_words.len() * 64 >= total_frames`.
+    pub unsafe fn new(
+        name: &'static str,
+        total_frames: usize,
+        bitmap_words: &'static mut [u64],
+    ) -> Self {
+        let layout = unsafe { crate::map::BitmapLayout::new(bitmap_words, total_frames) }
+            .expect("bitmap layout init failed");
+        Self {
+            name,
+            total_frames,
+            allocated_frames: AtomicUsize::new(0),
+            bitmap: IrqSpinlock::new(layout),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Returns the allocator name.
+    #[inline]
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+
+    /// Allocates a single physical frame.
+    pub fn allocate_frame(&self) -> Option<PhysFrame<S>> {
+        let mut bitmap = self.bitmap.lock();
+        let idx = bitmap.allocate_single().ok()?;
+        self.allocated_frames.fetch_add(1, Ordering::Relaxed);
+        Some(PhysFrame::from_index(idx))
+    }
+
+    /// Allocates `count` contiguous frames.
+    pub fn allocate_contiguous(&self, count: usize) -> Option<PhysFrame<S>> {
+        let mut bitmap = self.bitmap.lock();
+        let idx = bitmap.allocate_contiguous(count).ok()?;
+        self.allocated_frames.fetch_add(count, Ordering::Relaxed);
+        Some(PhysFrame::from_index(idx))
+    }
+
+    /// Deallocates a frame.
+    ///
+    /// # Safety
+    /// The frame must have been allocated from this allocator and must no
+    /// longer be in use.
+    pub unsafe fn deallocate_frame(&self, frame: PhysFrame<S>) {
+        let mut bitmap = self.bitmap.lock();
+        let _ = bitmap.clear(frame.index());
+        self.allocated_frames.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    /// Marks a range of frames as reserved (kernel image, ACPI, etc.).
+    pub fn register_reserved_region(&self, start: PhysAddr, count: usize) {
+        let mut bitmap = self.bitmap.lock();
+        let start_idx = start.as_usize() / S::SIZE;
+        let _ = bitmap.set_range(start_idx, count);
+        self.allocated_frames.fetch_add(count, Ordering::Relaxed);
+    }
+
+    /// Returns statistics.
+    pub fn stats(&self) -> AllocatorStats {
+        let allocated = self.allocated_frames.load(Ordering::Relaxed);
+        AllocatorStats {
+            name: self.name,
+            total_frames: self.total_frames,
+            allocated_frames: allocated,
+            free_frames: self.total_frames.saturating_sub(allocated),
+        }
+    }
+
+    /// Returns a fragmentation report.
+    pub fn fragmentation_report(&self) -> FragmentationReport {
+        let bitmap = self.bitmap.lock();
+        let report = bitmap.fragmentation_report();
+        FragmentationReport {
+            total_frames: report.total_frames,
+            allocated_frames: report.allocated_frames,
+            free_frames: report.free_frames,
+            largest_free_block: report.largest_free_block,
+            free_block_count: report.free_block_count,
+            fragmentation_index: report.fragmentation_index,
+        }
+    }
+}
+
+// ============================================================================
+// AllocatorRegistry (placeholder for global registry)
+// ============================================================================
+
+/// Global registry of frame allocators (one per page size).
+pub struct AllocatorRegistry {
+    pub alloc_4k: Option<&'static PhysicalFrameAllocator<Size4Kb>>,
+    pub alloc_2m: Option<&'static PhysicalFrameAllocator<Size2Mb>>,
+    pub alloc_1g: Option<&'static PhysicalFrameAllocator<Size1Gb>>,
+}
+
+impl AllocatorRegistry {
+    /// Creates an empty registry.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            alloc_4k: None,
+            alloc_2m: None,
+            alloc_1g: None,
+        }
+    }
+}

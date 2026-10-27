@@ -41,13 +41,10 @@
 
 use core::fmt;
 use core::marker::PhantomData;
-use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::frm::{
-    AllocatorStats, BitmapError, BitmapLayout, FragmentationReport, FrameError, IrqSpinlock,
-    PageSize, PhysAddr, PhysFrame, PhysicalFrameAllocator, Size1Gb, Size2Mb, Size4Kb,
-};
+use crate::frm::{FrameError, IrqSpinlock, PageSize, PhysAddr, PhysFrame};
+use crate::map::{BitmapError, BitmapLayout};
 
 // ============================================================================
 // 1. ZoneError
@@ -492,7 +489,7 @@ impl<S: PageSize> ZoneManager<S> {
         // Safety: we're using unsafe to mutate the array because we can't use
         // a lock here (the manager itself might be in a static).
         let zones_ptr = &self.zones as *const _ as *mut [Option<&'static Zone<S>>; MAX_ZONES];
-        (*zones_ptr)[slot] = Some(zone);
+        unsafe { (*zones_ptr)[slot] = Some(zone); }
         self.zone_count.fetch_add(1, Ordering::Release);
 
         Ok(())
@@ -589,7 +586,7 @@ impl<S: PageSize> ZoneManager<S> {
             .zone_for_address(addr)
             .ok_or(ZoneError::AddressNotInZone { addr })?;
 
-        zone.deallocate_frame(frame)
+        unsafe { zone.deallocate_frame(frame) }
     }
 
     /// Enables or disables fallback allocation.

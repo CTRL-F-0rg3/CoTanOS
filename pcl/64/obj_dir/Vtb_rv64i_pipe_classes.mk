@@ -33,6 +33,7 @@ VM_CLASSES_FAST += \
 
 # Generated module classes, non-fast-path, compile with low/medium optimization
 VM_CLASSES_SLOW += \
+  Vtb_rv64i_pipe__ConstPool__0__Slow \
   Vtb_rv64i_pipe___024root__Slow \
   Vtb_rv64i_pipe___024root__0__Slow \
 

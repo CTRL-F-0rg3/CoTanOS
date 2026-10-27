@@ -50,6 +50,7 @@ module tb_rv64i_pipe;
             $display("[timeout] cykli=%0d", cycles);
         end
         $display("pc =0x%016x", dbg_pc);
+        $display("x5 =0x%016x  x6 =0x%016x", u_core.u_rf.regs[5],  u_core.u_rf.regs[6]);
         $display("x10=0x%016x  x11=0x%016x", u_core.u_rf.regs[10], u_core.u_rf.regs[11]);
         $display("x12=0x%016x  x13=0x%016x", u_core.u_rf.regs[12], u_core.u_rf.regs[13]);
         if (pass) $display("*** PASS ***");

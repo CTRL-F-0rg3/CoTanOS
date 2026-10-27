@@ -12,7 +12,7 @@ Vtb_rv64i_pipe__Syms::Vtb_rv64i_pipe__Syms(VerilatedContext* contextp, const cha
     , TOP{this, namep}
 {
     // Check resources
-    Verilated::stackCheck(460);
+    Verilated::stackCheck(497);
     // Setup sub module instances
     // Configure time unit / time precision
     _vm_contextp__->timeunit(-9);

@@ -64,7 +64,7 @@ impl ArenaAllocator {
     const fn align_up(addr: usize, align: usize) -> Option<usize> {
         debug_assert!(align.is_power_of_two() && align > 0);
         let mask = align - 1;
-        addr.checked_add(mask).map(|a| a & !mask)
+        match addr.checked_add(mask) { Some(a) => Some(a & !mask), None => None }
     }
 
     /// Attempts to allocate `size` bytes with the specified `align`.

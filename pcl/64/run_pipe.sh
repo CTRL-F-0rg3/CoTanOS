@@ -3,7 +3,11 @@ set -e
 SRC="${1:?usage: $0 plik.S}"
 BASE="${SRC%.S}"
 
-if [ ! -x obj_dir/Vtb_rv64i_pipe ] || [ rv64i_pipe.v -nt obj_dir/Vtb_rv64i_pipe ]; then
+if [ ! -x obj_dir/Vtb_rv64i_pipe ] || \
+   [ rv64i_pipe.v -nt obj_dir/Vtb_rv64i_pipe ] || \
+   [ rv64i_csr.v  -nt obj_dir/Vtb_rv64i_pipe ] || \
+   [ rv64i_mem.v  -nt obj_dir/Vtb_rv64i_pipe ] || \
+   [ tb_rv64i_pipe.v -nt obj_dir/Vtb_rv64i_pipe ]; then
     echo "[build] verilator pipeline..."
     make obj_dir/Vtb_rv64i_pipe >/dev/null
 fi
