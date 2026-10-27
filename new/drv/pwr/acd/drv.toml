@@ -1,0 +1,8 @@
+name = "AC adapter"
+id = "acd"
+class = "pwr"
+lang = "zig"
+license = "GPL-3.0-only"
+status = "planned"
+arch = ["x86", "rv6"]
+caps = []

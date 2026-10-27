@@ -1,0 +1,8 @@
+name = "Intel e1000/e1000e Ethernet"
+id = "e10"
+class = "net"
+lang = "zig"
+license = "GPL-3.0-only"
+status = "planned"
+arch = ["x86", "rv6"]
+caps = []
