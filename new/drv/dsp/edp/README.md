@@ -1,0 +1,3 @@
+# edp
+
+embedded DisplayPort panel

@@ -1,0 +1,8 @@
+name = "16550 UART"
+id = "uar"
+class = "ser"
+lang = "odin"
+license = "GPL-3.0-only"
+status = "planned"
+arch = ["x86", "rv6"]
+caps = []

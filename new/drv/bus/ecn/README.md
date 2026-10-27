@@ -1,0 +1,3 @@
+# ecn
+
+Embedded controller

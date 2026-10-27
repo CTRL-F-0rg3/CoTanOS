@@ -1,0 +1,3 @@
+# cdc
+
+USB CDC serial

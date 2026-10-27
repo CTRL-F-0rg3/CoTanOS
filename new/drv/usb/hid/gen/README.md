@@ -1,0 +1,3 @@
+# gen
+
+USB HID class

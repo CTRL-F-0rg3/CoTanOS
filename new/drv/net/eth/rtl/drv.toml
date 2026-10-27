@@ -1,0 +1,8 @@
+name = "Realtek RTL8169 Ethernet"
+id = "rtl"
+class = "net"
+lang = "c"
+license = "GPL-3.0-only"
+status = "planned"
+arch = ["x86", "rv6"]
+caps = []

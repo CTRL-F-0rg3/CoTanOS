@@ -1,0 +1,8 @@
+name = "I2C controller"
+id = "i2c"
+class = "bus"
+lang = "zig"
+license = "GPL-3.0-only"
+status = "planned"
+arch = ["x86", "rv6"]
+caps = []

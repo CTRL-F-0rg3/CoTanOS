@@ -1,0 +1,8 @@
+name = "SD/SDIO host controller"
+id = "sdc"
+class = "sto"
+lang = "rust"
+license = "GPL-3.0-only"
+status = "planned"
+arch = ["x86", "rv6"]
+caps = []

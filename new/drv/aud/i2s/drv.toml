@@ -1,0 +1,8 @@
+name = "I2S audio"
+id = "i2s"
+class = "aud"
+lang = "zig"
+license = "GPL-3.0-only"
+status = "planned"
+arch = ["x86", "rv6"]
+caps = []
