@@ -271,7 +271,7 @@ impl<S: PageSize> Zone<S> {
         bitmap: &'static mut [u64],
     ) -> Result<Self, ZoneError> {
         let total_frames = (upper.as_usize() - lower.as_usize()) / S::SIZE;
-        let bitmap_layout = BitmapLayout::new(bitmap, total_frames)?;
+        let bitmap_layout = unsafe { BitmapLayout::new(bitmap, total_frames) }?;
 
         Ok(Self {
             zone_type,
