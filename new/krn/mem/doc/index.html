@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoTanOS Memory Management Architecture</title>
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --text-color: #212529;
+            --accent-color: #0d6efd;
+            --code-bg: #1e1e1e;
+            --code-text: #d4d4d4;
+            --arena-color: #0dcaf0;
+            --frame-color: #198754;
+            --zone-color: #fd7e14;
+            --slab-color: #6f42c1;
+            --stat-color: #dc3545;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.7;
+            color: var(--text-color);
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        h1, h2, h3, h4 { color: #111; margin-top: 2rem; }
+        h1 { border-bottom: 3px solid var(--accent-color); padding-bottom: 0.5rem; }
+        h2 { border-bottom: 1px solid #dee2e6; padding-bottom: 0.3rem; }
+        
+        .toc {
+            background: #e9ecef;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 2rem 0;
+        }
+        .toc h3 { margin-top: 0; }
+        .toc ul { list-style-type: none; padding-left: 0; }
+        .toc li { margin: 0.5rem 0; }
+        .toc a { text-decoration: none; color: var(--accent-color); font-weight: 500; }
+        .toc a:hover { text-decoration: underline; }
+
+        .concept-box {
+            background: #e7f5ff;
+            border-left: 4px solid var(--accent-color);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .layer-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            color: white;
+            font-weight: bold;
+            font-size: 0.85rem;
+            margin-right: 0.5rem;
+        }
+        .badge-arena { background-color: var(--arena-color); color: #000; }
+        .badge-frame { background-color: var(--frame-color); }
+        .badge-zone { background-color: var(--zone-color); }
+        .badge-slab { background-color: var(--slab-color); }
+        .badge-stat { background-color: var(--stat-color); }
+
+        pre {
+            background-color: var(--code-bg);
+            color: var(--code-text);
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: "Fira Code", "Consolas", monospace;
+            font-size: 0.9rem;
+        }
+
+        code {
+            background-color: #e9ecef;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: "Fira Code", "Consolas", monospace;
+            font-size: 0.9em;
+            color: #d63384;
+        }
+        pre code { background-color: transparent; color: inherit; padding: 0; }
+
+        .analogy {
+            font-style: italic;
+            color: #495057;
+            border-left: 3px solid #adb5bd;
+            padding-left: 1rem;
+            margin: 1rem 0;
+        }
+
+        footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid #dee2e6;
+            text-align: center;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .container { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>CoTanOS Memory Management Architecture</h1>
+    <p><strong>A comprehensive guide to the design, implementation, and safety guarantees of the CoTanOS memory subsystem.</strong></p>
+    <p><em>Designed to be accessible to software engineers of all backgrounds, from OS veterans to curious beginners.</em></p>
+
+    <div class="toc">
+        <h3>Table of Contents</h3>
+        <ul>
+            <li><a href="#intro">1. Introduction: The Bootstrapping Problem</a></li>
+            <li><a href="#hierarchy">2. The Memory Hierarchy (The Big Picture)</a></li>
+            <li><a href="#arena">3. Layer 1: Early Boot Arena (<code>arn.rs</code>)</a></li>
+            <li><a href="#frame">4. Layer 2: Physical Frame Allocator (<code>frm.rs</code> & <code>map.rs</code>)</a></li>
+            <li><a href="#zone">5. Layer 3: Zone Manager (<code>zon.rs</code>)</a></li>
+            <li><a href="#slab">6. Layer 4: Slab Allocator (<code>slb.rs</code>)</a></li>
+            <li><a href="#stats">7. Observability: Statistics & Diagnostics (<code>stat.rs</code>)</a></li>
+            <li><a href="#safety">8. Safety & Correctness Guarantees</a></li>
+        </ul>
+    </div>
+
+    <h2 id="intro">1. Introduction: The Bootstrapping Problem</h2>
+    <div class="concept-box">
+        <strong>The Chicken-and-Egg Dilemma:</strong> To manage memory dynamically, an operating system needs data structures (like linked lists or trees). But to create those data structures, it needs to allocate memory. How do you allocate memory before you have a memory allocator?
+    </div>
+    <p>CoTanOS solves this through a <strong>layered, phased approach</strong>. We start with the simplest, dumbest, but most reliable allocator possible. Once that is running, we use it to build a slightly smarter allocator, and so on, until we have a production-grade, SMP-safe, fragmentation-resistant memory management subsystem.</p>
+
+    <h2 id="hierarchy">2. The Memory Hierarchy (The Big Picture)</h2>
+    <p>The CoTanOS memory subsystem is divided into four distinct layers, each building upon the previous one:</p>
+    <ol>
+        <li><span class="layer-badge badge-arena">Arena</span> <strong>Early Boot:</strong> A simple "bump" allocator. It only moves forward. Used to allocate the metadata for the next layers.</li>
+        <li><span class="layer-badge badge-frame">Frame</span> <strong>Physical Pages:</strong> Manages raw RAM in fixed-size chunks (4KB, 2MB, 1GB). Uses a highly optimized bitmap.</li>
+        <li><span class="layer-badge badge-zone">Zone</span> <strong>Hardware Constraints:</strong> Groups physical frames into zones (DMA, DMA32, Normal) based on hardware addressing limits.</li>
+        <li><span class="layer-badge badge-slab">Slab</span> <strong>Kernel Objects:</strong> Carves frames into fixed-size object caches (e.g., 64-byte task structs) to eliminate fragmentation and provide O(1) allocation speed.</li>
+    </ol>
+
+    <h2 id="arena">3. Layer 1: Early Boot Arena (<code>arn.rs</code>)</h2>
+    <div class="analogy">
+        <strong>Analogy:</strong> Imagine a roll of tape. You pull out what you need, cut it, and the next person pulls from where you left off. You can't put tape back on the roll, but it's incredibly fast and requires no complex bookkeeping.
+    </div>
+    <p>The <code>ArenaAllocator</code> is the very first allocator initialized. The bootloader (UEFI/BIOS) hands the kernel a block of usable RAM. The arena simply hands out slices of this block.</p>
+    
+    <h4>Key Architectural Features:</h4>
+    <ul>
+        <li><strong>Lock-Free & SMP-Safe:</strong> Uses <code>AtomicUsize</code> with <code>Acquire/Release</code> memory ordering. Multiple CPU cores can wake up and allocate from the arena simultaneously without traditional locks, preventing boot-time deadlocks.</li>
+        <li><strong>Cache-Line Isolation:</strong> The struct is marked with <code>#[repr(C, align(64))]</code>. This ensures the atomic offset counter sits alone in its CPU cache line, preventing <em>false sharing</em> (where multiple cores fighting over adjacent variables slow down the whole memory bus).</li>
+        <li><strong>Null-Page Guard:</strong> If the bootloader provides memory starting at physical address <code>0x0</code>, the arena automatically skips it. In Rust, a null pointer is Undefined Behavior (UB). This guard prevents the creation of invalid <code>NonNull</code> pointers.</li>
+        <li><strong>Zero-Sized Type (ZST) Handling:</strong> Requesting 0 bytes doesn't consume arena space; it returns a safely aligned "dangling" pointer, preventing pointer aliasing bugs.</li>
+    </ul>
+
+    <h2 id="frame">4. Layer 2: Physical Frame Allocator (<code>frm.rs</code> & <code>map.rs</code>)</h2>
+    <div class="concept-box">
+        <strong>What is a Frame?</strong> Operating systems don't manage memory byte-by-byte; that would require terabytes of metadata. Instead, memory is divided into fixed-size blocks called <em>frames</em> (or pages), typically 4 Kilobytes (4KB), 2 Megabytes (2MB), or 1 Gigabyte (1GB).
+    </div>
+    <p>The Frame Allocator tracks which frames are free and which are in use. CoTanOS uses a <strong>Bitmap</strong> approach, managed by the <code>BitmapLayout</code> engine.</p>
+
+    <h4>How the Bitmap Engine Works:</h4>
+    <ul>
+        <li><strong>Word-Oriented Scanning:</strong> The bitmap is stored as an array of 64-bit integers (<code>&mut [u64]</code>). Instead of checking 64 individual bits one by one, the allocator checks the whole 64-bit word at once. If the word is <code>0xFFFF_FFFF_FFFF_FFFF</code>, it knows all 64 frames are allocated and skips them instantly. This makes scanning blazingly fast.</li>
+        <li><strong>Contiguous Allocation:</strong> Devices like network cards (DMA) often need a block of physically adjacent frames. The bitmap engine features a sliding-window algorithm to find <em>N</em> consecutive free frames efficiently.</li>
+        <li><strong>Padding Protection:</strong> If the total number of frames isn't a perfect multiple of 64, the "extra" bits at the end of the last word are permanently marked as allocated (1). This prevents the allocator from ever handing out memory that doesn't exist.</li>
+    </ul>
+
+    <h4>SMP & Interrupt Safety (<code>IrqSpinlock</code>):</h4>
+    <div class="warning-box">
+        <strong>The Deadlock Scenario:</strong> CPU 1 holds the frame allocator lock. An hardware interrupt occurs on CPU 1. The interrupt handler also needs a frame. It tries to acquire the lock... and the system freezes forever.
+    </div>
+    <p>CoTanOS solves this with <code>IrqSpinlock</code>. When a core acquires this lock, it first <strong>disables local hardware interrupts</strong>. This guarantees that an interrupt handler on the same core cannot preempt the code and cause a deadlock. The previous interrupt state is saved and perfectly restored when the lock is dropped.</p>
+
+    <h2 id="zone">5. Layer 3: Zone Manager (<code>zon.rs</code>)</h2>
+    <div class="analogy">
+        <strong>Analogy:</strong> Imagine a parking garage. Some spots are for compact cars only (low clearance), some for standard cars, and some for trucks. You wouldn't put a compact car in a truck spot if you can avoid it, and a truck physically cannot fit in a compact spot.
+    </div>
+    <p>Not all hardware can address all memory. A legacy ISA device might only have 24 address lines, meaning it physically cannot see any memory above 16 Megabytes. The Zone Manager partitions physical memory to respect these hardware limits.</p>
+
+    <h4>The Zones:</h4>
+    <ul>
+        <li><strong>DMA Zone:</strong> Physical addresses below 16 MiB. For legacy hardware.</li>
+        <li><strong>DMA32 Zone:</strong> Physical addresses below 4 GiB. For modern 32-bit PCI devices.</li>
+        <li><strong>Normal Zone:</strong> All remaining memory above 4 GiB. General-purpose kernel use.</li>
+        <li><strong>HighMem Zone:</strong> Memory above the kernel's direct-mapping window (architecture-dependent).</li>
+    </ul>
+
+    <h4>Intelligent Fallback:</h4>
+    <p>If a driver requests memory from the <code>DMA32</code> zone, but it is completely full, the Zone Manager doesn't immediately panic with an Out-Of-Memory (OOM) error. Instead, it intelligently <strong>falls back</strong> to the <code>Normal</code> zone (if the hardware supports it via IOMMU, or as a last resort), ensuring system stability.</p>
+
+    <h2 id="slab">6. Layer 4: Slab Allocator (<code>slb.rs</code>)</h2>
+    <div class="concept-box">
+        <strong>The Fragmentation Problem:</strong> If you constantly allocate and free random sizes (e.g., 45 bytes, then 112 bytes), physical memory becomes like "Swiss cheese." You might have 100MB of total free memory, but no single contiguous 50MB block. This is <em>external fragmentation</em>.
+    </div>
+    <p>The Slab Allocator eliminates external fragmentation by grouping kernel objects into <strong>fixed-size caches</strong> (e.g., 32B, 64B, 128B, up to 8KB). When you ask for 45 bytes, it gives you a 64-byte slot. </p>
+
+    <h4>How a Slab Cache Works:</h4>
+    <ol>
+        <li>The allocator requests a 4KB frame from the Frame Allocator.</li>
+        <li>It divides this frame into, for example, sixty-four 64-byte objects.</li>
+        <li>It links all free objects together into a <strong>singly linked free list</strong> embedded directly inside the unused memory of the objects themselves (zero metadata overhead!).</li>
+        <li>Allocation is now <strong>O(1)</strong>: just pop the first item off the free list. Deallocation is <strong>O(1)</strong>: just push it back on.</li>
+    </ol>
+
+    <h4>Production-Grade Debugging Features:</h4>
+    <p>When compiled with <code>debug_assertions</code>, the slab allocator becomes a powerful bug-hunting tool:</p>
+    <ul>
+        <li><strong>Redzones:</strong> It allocates extra bytes before and after the object, filling them with a specific pattern (<code>0xAD</code>). If a buffer overflow occurs, it overwrites this pattern. Upon deallocation, the allocator checks the redzones and instantly panics with a "Redzone Corruption" error, pinpointing the exact bug.</li>
+        <li><strong>Poisoning:</strong> When an object is freed, its memory is filled with a poison pattern (<code>0xDE</code>). If the kernel accidentally tries to read from this freed memory (Use-After-Free), it will read garbage data, making the bug obvious rather than silently corrupting state.</li>
+    </ul>
+
+    <h2 id="stats">7. Observability: Statistics & Diagnostics (<code>stat.rs</code>)</h2>
+    <p>A kernel is only as good as its ability to be debugged. The <code>stat</code> module provides a unified, lock-free way to query the health of all allocators.</p>
+    <ul>
+        <li><strong>Lock-Free Counters:</strong> Uses <code>AtomicU64</code> to track allocation/deallocation counts and byte totals. This adds near-zero overhead to the hot allocation path.</li>
+        <li><strong>Fragmentation Index:</strong> Calculates a score from <code>0.0</code> (perfect, all free memory is contiguous) to <code>1.0</code> (fully fragmented, memory is in tiny, unusable holes). This is critical for long-running systems.</li>
+        <li><strong>Kernel Shell Integration:</strong> Provides <code>fmt::Display</code> implementations so memory reports can be easily printed to a serial console or kernel shell via a simple <code>meminfo</code> command.</li</ul>
+
+    <h2 id="safety">8. Safety & Correctness Guarantees</h2>
+    <p>CoTanOS memory management is written in Rust, leveraging the compiler to eliminate entire classes of bugs. Key guarantees include:</p>
+    <ul>
+        <li><strong><code>#![no_std]</code> Purity:</strong> The crate has zero dependencies on the Rust standard library. No hidden heap allocations, no floating-point operations (safe for early boot before FPU initialization).</li>
+        <li><strong>Checked Arithmetic:</strong> Every addition, subtraction, or multiplication involving memory addresses or sizes uses <code>.checked_add()</code> or <code>.saturating_sub()</code>. Integer overflows return <code>Result::Err</code> or <code>None</code>, they <em>never</em> silently wrap around and corrupt memory.</li>
+        <li><strong>Strict <code>unsafe</code> Boundaries:</strong> The crate uses <code>#![deny(unsafe_op_in_unsafe_fn)]</code>. This means even inside an <code>unsafe fn</code>, every single dereference of a raw pointer or call to an unsafe intrinsic must be wrapped in its own explicit <code>unsafe { ... }</code> block. This forces the developer to consciously acknowledge and justify every single unsafe operation.</li>
+        <li><strong>Lifetime Enforcement:</strong> Methods like <code>alloc_slice<'a>(&'a self)</code> tie the returned memory directly to the lifetime of the allocator. The Rust compiler will statically prevent you from using arena-allocated memory after the arena has been reset or dropped.</li>
+    </ul>
+
+    <footer>
+        <p><strong>CoTanOS Memory Subsystem Documentation</strong><br>
+        SPDX-FileCopyrightText: 2026 CTRL-F-0rg3<br>
+        SPDX-License-Identifier: GPL-3.0-only</p>
+        <p>Generated for educational and architectural reference purposes.</p.>
+    </footer>
+</div>
+
+</body>
+</html>
