@@ -3,6 +3,7 @@
 #include "Vtb_rv64i.cpp"
 #include "Vtb_rv64i___024root__0.cpp"
 #include "Vtb_rv64i__main.cpp"
+#include "Vtb_rv64i__ConstPool__0__Slow.cpp"
 #include "Vtb_rv64i___024root__Slow.cpp"
 #include "Vtb_rv64i___024root__0__Slow.cpp"
 #include "Vtb_rv64i__Syms__Slow.cpp"
