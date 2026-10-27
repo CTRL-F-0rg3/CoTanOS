@@ -1,0 +1,107 @@
+.
+├── alloc
+│   ├── api
+│   │   ├── alloc.c
+│   │   └── alloc.h
+│   ├── debug
+│   │   ├── alloc_debug.c
+│   │   ├── alloc_debug.h
+│   │   ├── leak.c
+│   │   ├── leak.h
+│   │   ├── stats.c
+│   │   └── stats.h
+│   ├── heap
+│   │   ├── buddy.c
+│   │   ├── buddy.h
+│   │   ├── heap.c
+│   │   ├── heap.h
+│   │   ├── slab.c
+│   │   └── slab.h
+│   ├── physical
+│   │   ├── bitmap.c
+│   │   ├── bitmap.h
+│   │   ├── frame.c
+│   │   ├── frame.h
+│   │   ├── pmm.c
+│   │   └── pmm.h
+│   ├── special
+│   │   ├── contiguous.c
+│   │   ├── contiguous.h
+│   │   ├── dma.c
+│   │   └── dma.h
+│   └── virtual
+│       ├── mapping.c
+│       ├── mapping.h
+│       ├── page.c
+│       ├── page.h
+│       ├── vmm.c
+│       └── vmm.h
+├── api.rs
+├── arch
+│   ├── aarch64
+│   │   ├── memory.h
+│   │   ├── paging.c
+│   │   ├── paging.h
+│   │   ├── tlb.c
+│   │   └── tlb.h
+│   └── x86_64
+│       ├── memory.c
+│       ├── memory.h
+│       ├── paging.c
+│       ├── paging.h
+│       ├── tlb_asm.h
+│       ├── tlb_asm.s
+│       ├── tlb.c
+│       └── tlb.h
+├── cache
+│   ├── cache.c
+│   ├── cache.h
+│   ├── object_cache.c
+│   ├── object_cashe.h
+│   ├── per_cpu.c
+│   └── per_cpu.h
+├── core
+│   ├── address.c
+│   ├── address.h
+│   ├── mm.c
+│   ├── mm.h
+│   ├── range.c
+│   ├── range.h
+│   ├── region.c
+│   ├── region.h
+│   ├── sizeutil.c
+│   ├── sizeutil.h
+│   ├── smp_lock.c
+│   └── smp_lock.h
+├── ffi.rs
+├── init.rs
+├── kprintf.c
+├── mm_bridge.rs
+├── MM_PLAN_ULEPSZENIA.md
+├── mod.rs
+├── paging
+│   ├── paging.c
+│   ├── paging.h
+│   ├── pml.c
+│   ├── pml.h
+│   ├── tlb.c
+│   └── tlb.h
+├── phys.rs
+├── process
+│   ├── address_space.c
+│   ├── address_space.h
+│   ├── mmap.c
+│   └── mmap.h
+├── protection
+│   ├── guard.c
+│   ├── guard.h
+│   ├── isolation.c
+│   ├── isolation.h
+│   ├── permissions.c
+│   └── permissions.h
+├── riscv.rs
+├── space.rs
+├── tree.txt
+└── virt.rs
+
+16 directories, 89 files
