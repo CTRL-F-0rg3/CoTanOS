@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoTanOS — Booting Process & Architecture Specification</title>
+    <style>
+        :root {
+            --bg-color: #0f1115;
+            --card-bg: #161b22;
+            --text-color: #c9d1d9;
+            --accent-color: #58a6ff;
+            --border-color: #30363d;
+            --code-bg: #1f2428;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            margin: 0;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        header {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        h1 { color: #ffffff; font-size: 2.2rem; margin-bottom: 0.5rem; }
+        h2 { color: var(--accent-color); border-bottom: 1px solid var(--border-color); padding-bottom: 0.3rem; margin-top: 2rem; }
+        p { margin-bottom: 1rem; }
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        pre {
+            background-color: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 1rem;
+            overflow-x: auto;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            font-size: 0.9rem;
+        }
+        code { color: #79c0ff; }
+        ul, ol { padding-left: 1.5rem; }
+        li { margin-bottom: 0.5rem; }
+        footer {
+            margin-top: 3rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: #8b949e;
+            border-top: 1px solid var(--border-color);
+            padding-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>CoTanOS — Booting Process & Architecture Specification</h1>
+            <p>Technical documentation covering the low-level hardware initialization layer (<code>ini/</code>) and the <strong>256xtr</strong> microkernel for the RISC-V architecture.</p>
+        </header>
+
+        <section class="card">
+            <h2>1. Project Design Goals</h2>
+            <p>CoTanOS abandons legacy x86 standards and external firmware dependencies (such as traditional OpenSBI) to maintain complete control over the bare metal. The system is designed for native <strong>RISC-V 64-bit (rv64gc)</strong> architecture and custom target hardware.</p>
+            <ul>
+                <li><strong>Kernel Architecture:</strong> The <code>256xtr</code> microkernel featuring an embedded network driver (<code>krn/net</code>) within kernel space for maximum performance.</li>
+                <li><strong>Independence:</strong> A custom bootloader layer located in the <code>ini/</code> directory, initializing the processor from the very first clock cycle.</li>
+                <li><strong>Toolchain Environment:</strong> An isolated containerized build environment based on Arch Linux and RISC-V GCC.</li>
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2>2. Boot Sequence (`ini/` Bootloader)</h2>
+            <p>The system startup consists of two critical low-level phases before transferring execution control to the <code>256xtr</code> microkernel:</p>
+            <ol>
+                <li><strong>Assembly Initialization (<code>ini/boot.s</code>):</strong> Takes control at address <code>0x80000000</code>, sets up the processor stack, zeroes out the BSS section, and prepares the environment for C code execution.</li>
+                <li><strong>Hardware Initialization (<code>ini/main.c</code>):</strong> Configures basic I/O mechanisms (UART), sets up memory mapping foundations, and prepares for the core kernel handoff.</li>
+            </ol>
+            <pre><code># Compilation and QEMU execution without external firmware wrappers
+./run-compiler.sh riscv64-elf-gcc -march=rv64gc -mabi=lp64d -mcmodel=medany -nostdlib -ffreestanding -O2 -c ini/main.c -o ini/main.o
+qemu-system-riscv64 -machine virt -cpu rv64 -smp 1 -m 128M -bios none -kernel ini/bootloader.elf</code></pre>
+        </section>
+
+        <section class="card">
+            <h2>3. Git Branching Model</h2>
+            <p>Project development is organized into feature branches and experimental milestones:</p>
+            <ul>
+                <li><code>cotanos</code> — The primary development branch integrating stable system components.</li>
+                <li><code>w1</code> through <code>w7</code> — Working branches dedicated to architectural progression and driver implementation steps.</li>
+            </ul>
+        </section>
+
+        <footer>
+            <p>CoTanOS Project &bull; Built by users, for users.</p>
+        </footer>
+    </div>
+</body>
+</html>
