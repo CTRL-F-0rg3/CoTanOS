@@ -17,10 +17,10 @@ b_clear:
     j b_clear
 
 b_done:
-    # 3. Skok do głównej procedury inicjalizacyjnej (np. napisanej w C)
+    # 3. Skok do głównej procedury inicjalizacyjnej (C)
     call init_main
 
-    # 4. Bezpieczna pętla zatrzymująca (gdyby init_main powrócił)
+    # 4. Bezpieczna pętla zatrzymująca
 _halt:
     wfi
     j _halt
@@ -28,5 +28,5 @@ _halt:
 .section .bss
 .align 16
 stack_bottom:
-    .space STACK_SIZE * 4  # Miejsce na stos dla kilku rdzeni
+    .space STACK_SIZE * 4
 stack_top:
