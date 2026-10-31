@@ -3,4 +3,18 @@ name = "arc-rv6"
 version = "0.1.0"
 edition = "2021"
 authors = ["CTRL-F-0rg3"]
+description = "CoTanOS 256xtr — RISC-V kernel entry (started by the ini/ bootloader)"
 license = "GPL-3.0-only"
+
+[[bin]]
+name = "arc-rv6"
+path = "src/main.rs"
+
+[dependencies]
+cotanos-mem = { path = "../../krn/mem" }
+
+[profile.release]
+opt-level = 2
+debug = false
+lto = true
+

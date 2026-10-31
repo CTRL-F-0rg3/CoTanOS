@@ -1,273 +1,268 @@
+/* SPDX-FileCopyrightText: 2026 CTRL-F-0rg3
+ * SPDX-License-Identifier: GPL-3.0-only
+ *
+ * ini/ — CoTanOS Hardware Bootloader (S-mode).
+ * BIOS role on x86_64: memory discovery (FDT), Sv39 paging with a
+ * 1:1 map (physical memory + MMIO), welcome screen (ramfb) and the
+ * hand-off to the kernel.
+ */
+
 #include <stdint.h>
+#include "sbi.h"
+#include "fdt.h"
+#include "bootinfo.h"
+#include "gfx.h"
+#include "font_atlas.h"
 
-/* ================================================================== */
-/*  UART (debug)                                                      */
-/* ================================================================== */
-#define UART_BASE 0x10000000
-static volatile uint8_t *const UART_THR = (uint8_t *)UART_BASE;
+#define KERNEL_ENTRY 0x80400000UL
 
-void uart_puts(const char *s) {
+/* --- Sv39 --- */
+#define SATP_MODE_SV39 (8UL << 60)
+
+#define PTE_V (1UL << 0)
+#define PTE_R (1UL << 1)
+#define PTE_W (1UL << 2)
+#define PTE_X (1UL << 3)
+#define PTE_A (1UL << 6)
+#define PTE_D (1UL << 7)
+
+/* All permissions + A/D set upfront (no A/D traps). */
+#define PTE_FLAGS (PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D)
+
+#define PAGE_ENTRIES 512
+
+/* Page-table buffers (zeroed .bss, 4 KiB aligned). */
+extern char __pg_root[];
+
+/* Bootinfo for the kernel (in .data). */
+static struct bootinfo bootinfo = {
+    .magic = BOOTINFO_MAGIC,
+    .version = BOOTINFO_VERSION,
+    .mem_base = 0,
+    .mem_size = 0,
+    .fdt_addr = 0,
+    .kernel_entry = KERNEL_ENTRY,
+    .fb_addr = 0,
+    .fb_width = 0,
+    .fb_height = 0,
+    .fb_bpp = 0,
+    .fb_pitch = 0,
+};
+
+static void puts(const char *s)
+{
     while (*s) {
-        *UART_THR = *s++;
+        sbi_console_putchar(*s++);
     }
 }
 
-/* ================================================================== */
-/*  Prosta czcionka 8x8                                               */
-/* ================================================================== */
-static const uint8_t font8x8_basic[128][8] = {
-    ['C'] = { 0x3C, 0x66, 0xC0, 0xC0, 0xC0, 0x66, 0x3C, 0x00 },
-    ['o'] = { 0x00, 0x00, 0x3C, 0x66, 0x66, 0x66, 0x3C, 0x00 },
-    ['T'] = { 0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00 },
-    ['a'] = { 0x00, 0x00, 0x3C, 0x06, 0x3E, 0x66, 0x3F, 0x00 },
-    ['n'] = { 0x00, 0x00, 0xDC, 0x66, 0x66, 0x66, 0x66, 0x00 },
-    ['O'] = { 0x3C, 0x66, 0xC3, 0xC3, 0xC3, 0x66, 0x3C, 0x00 },
-    ['S'] = { 0x3C, 0x60, 0x3C, 0x06, 0x06, 0x66, 0x3C, 0x00 },
-};
+void boot_fatal_trap(uint64_t scause, uint64_t sepc)
+    __attribute__((noreturn));
 
-/* ================================================================== */
-/*  Framebuffer                                                       */
-/* ================================================================== */
-typedef struct {
-    uint32_t *base;
-    uint32_t width;
-    uint32_t height;
-} Framebuffer;
-
-static inline void put_pixel(Framebuffer *fb, uint32_t x, uint32_t y, uint32_t color) {
-    if (x < fb->width && y < fb->height) {
-        fb->base[y * fb->width + x] = color;
+void boot_fatal_trap(uint64_t scause, uint64_t sepc)
+{
+    puts("\r\n[CoTanBoot] FATAL S-mode trap! scause=");
+    /* hex, no libc */
+    for (int i = 60; i >= 0; i -= 4) {
+        char d = "0123456789abcdef"[(scause >> i) & 0xF];
+        sbi_console_putchar(d);
     }
-}
-
-void draw_char(Framebuffer *fb, uint32_t x, uint32_t y, char c, uint32_t color, int scale) {
-    const uint8_t *glyph = font8x8_basic[(unsigned char)c];
-    for (int row = 0; row < 8; row++) {
-        uint8_t line = glyph[row];
-        for (int col = 0; col < 8; col++) {
-            if (line & (1 << (7 - col))) {
-                for (int sx = 0; sx < scale; sx++) {
-                    for (int sy = 0; sy < scale; sy++) {
-                        put_pixel(fb, x + col * scale + sx, y + row * scale + sy, color);
-                    }
-                }
-            }
-        }
+    puts(" sepc=");
+    for (int i = 60; i >= 0; i -= 4) {
+        char d = "0123456789abcdef"[(sepc >> i) & 0xF];
+        sbi_console_putchar(d);
     }
-}
-
-void draw_centered_string(Framebuffer *fb, const char *str, uint32_t color, int scale) {
-    for (uint32_t y = 0; y < fb->height; y++) {
-        for (uint32_t x = 0; x < fb->width; x++) {
-            fb->base[y * fb->width + x] = 0x00000000;
-        }
-    }
-
-    int len = 0;
-    const char *s = str;
-    while (*s++) len++;
-
-    uint32_t char_width   = 8 * scale;
-    uint32_t spacing      = 4 * scale;
-    uint32_t total_width  = len * char_width + (len > 1 ? (len - 1) * spacing : 0);
-    uint32_t total_height = 8 * scale;
-
-    uint32_t start_x = (fb->width  > total_width)  ? (fb->width  - total_width)  / 2 : 0;
-    uint32_t start_y = (fb->height > total_height) ? (fb->height - total_height) / 2 : 0;
-
-    uint32_t cursor_x = start_x;
-    s = str;
-    while (*s) {
-        draw_char(fb, cursor_x, start_y, *s, color, scale);
-        cursor_x += char_width + spacing;
-        s++;
-    }
-}
-
-/* ================================================================== */
-/*  bswap BEZ __builtin_bswap*, BEZ libgcc                            */
-/*  __asm__ volatile po obliczeniu blokuje pattern-matcher GCC,       */
-/*  który od -O1 zamieniłby to z powrotem na wywołanie __bswap* z libgcc. */
-/* ================================================================== */
-static __attribute__((noinline)) uint16_t bswap16(uint16_t v) {
-    uint16_t r = (uint16_t)((v >> 8) | (v << 8));
-    __asm__ volatile ("" : "+r"(r));
-    return r;
-}
-
-static __attribute__((noinline)) uint32_t bswap32(uint32_t v) {
-    uint32_t r = ((v >> 24) & 0x000000FFu) |
-                 ((v >>  8) & 0x0000FF00u) |
-                 ((v <<  8) & 0x00FF0000u) |
-                 ((v << 24) & 0xFF000000u);
-    __asm__ volatile ("" : "+r"(r));
-    return r;
-}
-
-static __attribute__((noinline)) uint64_t bswap64(uint64_t v) {
-    uint32_t lo = (uint32_t)(v & 0xFFFFFFFFu);
-    uint32_t hi = (uint32_t)(v >> 32);
-    uint64_t r  = ((uint64_t)bswap32(lo) << 32) | (uint64_t)bswap32(hi);
-    __asm__ volatile ("" : "+r"(r));
-    return r;
-}
-
-/* ================================================================== */
-/*  fw_cfg DMA + ramfb                                                */
-/* ================================================================== */
-#define FW_CFG_BASE          0x10100000ULL
-#define FW_CFG_DMA           (FW_CFG_BASE + 0x10)
-
-#define FW_CFG_ID            0x0001
-#define FW_CFG_FILE_DIR      0x0019
-
-#define FW_CFG_DMA_ERROR     0x01
-#define FW_CFG_DMA_READ      0x02
-#define FW_CFG_DMA_SKIP      0x04
-#define FW_CFG_DMA_SELECT    0x08
-#define FW_CFG_DMA_WRITE     0x10
-
-struct __attribute__((packed)) FWCfgDmaAccess {
-    uint32_t control;
-    uint32_t length;
-    uint64_t address;
-};
-
-struct __attribute__((packed)) RAMFBCfg {
-    uint64_t addr;
-    uint32_t fourcc;
-    uint32_t flags;
-    uint32_t width;
-    uint32_t height;
-    uint32_t stride;
-};
-
-static volatile uint64_t *const fw_dma = (volatile uint64_t *)FW_CFG_DMA;
-static struct FWCfgDmaAccess dma_req;
-
-static void fw_cfg_dma_transfer(uint32_t control, uint32_t len, uint64_t addr) {
-    dma_req.control = bswap32(control);
-    dma_req.length  = bswap32(len);
-    dma_req.address = bswap64(addr);
-
-    *fw_dma = bswap64((uint64_t)(uintptr_t)&dma_req);
-
-    while (1) {
-        uint32_t ctrl = bswap32(dma_req.control);
-        if (ctrl & FW_CFG_DMA_ERROR) {
-            uart_puts("[fw_cfg] DMA error!\n");
-            return;
-        }
-        if (ctrl == 0) {
-            return;
-        }
-    }
-}
-
-static int fw_cfg_has_dma(void) {
-    uint32_t id_raw = 0;
-    fw_cfg_dma_transfer((FW_CFG_ID << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_READ,
-                        sizeof(id_raw), (uint64_t)(uintptr_t)&id_raw);
-
-    const uint8_t *p = (const uint8_t *)&id_raw;
-    uint32_t val = (uint32_t)p[0]
-                 | ((uint32_t)p[1] << 8)
-                 | ((uint32_t)p[2] << 16)
-                 | ((uint32_t)p[3] << 24);
-    return (val & 0x02u) ? 1 : 0;
-}
-
-struct __attribute__((packed)) FWCfgFile {
-    uint32_t size;
-    uint16_t select;
-    uint16_t reserved;
-    char     name[56];
-};
-
-static uint32_t fw_cfg_find_file(const char *name) {
-    /* 1. Odczytaj liczbę wpisów (4B, big-endian). SELECT+READ czyta od offsetu 0. */
-    uint32_t count_be = 0;
-    fw_cfg_dma_transfer((FW_CFG_FILE_DIR << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_READ,
-                        sizeof(count_be), (uint64_t)(uintptr_t)&count_be);
-    uint32_t count = bswap32(count_be);
-
-    /* sanity check – katalog fw_cfg ma zawsze kilka wpisów, ale nie tysiące */
-    if (count == 0 || count > 256) {
-        return 0xFFFFFFFFu;
-    }
-
-    /* 2. Iteruj po wpisach. KLUCZ: nie używamy SELECT przy READ — inaczej     *
-     *    fw_cfg_select() wyzerowałby cur_offset z powrotem do 0 i zawsze      *
-     *    czytalibyśmy wpis 0. SKIP w pierwszej transakcji ustawia offset,     *
-     *    a READ bez SELECT kontynuuje od tego miejsca.                        */
-    for (uint32_t i = 0; i < count; i++) {
-        struct FWCfgFile file;
-        uint32_t offset = sizeof(uint32_t) + i * sizeof(struct FWCfgFile);
-
-        fw_cfg_dma_transfer((FW_CFG_FILE_DIR << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_SKIP,
-                            offset, 0);
-
-        fw_cfg_dma_transfer(FW_CFG_DMA_READ, sizeof(file),
-                            (uint64_t)(uintptr_t)&file);
-
-        int match = 1;
-        for (int j = 0; j < 56; j++) {
-            if (name[j] == '\0' && file.name[j] == '\0') break;
-            if (name[j] != file.name[j]) { match = 0; break; }
-        }
-        if (match) {
-            return bswap16(file.select);
-        }
+    puts("\r\n[CoTanBoot] halting.\r\n");
+    for (;;) {
+        __asm__ volatile ("wfi");
     }
     return 0xFFFFFFFFu;
 }
 
-static int ramfb_setup(uint64_t fb_addr, uint32_t width, uint32_t height) {
-    if (!fw_cfg_has_dma()) {
-        uart_puts("[ramfb] fw_cfg DMA not available\n");
-        return 0;
+/*
+ * Sv39 page-table build (3 levels, 1:1 mapping):
+ *  - root (L2): 512 entries x 1 GiB
+ *      [0] = gigapage 0x0000_0000..0x4000_0000 (MMIO: UART, CLINT, PLIC, ...)
+ *      [1] = gigapage 0x4000_0000..0x8000_0000 (PCIe MMIO)
+ *      [2] = L1 table for 0x8000_0000..0xC000_0000 (RAM)
+ *  - L1: 2 MiB megapages — the whole RAM gigapage.
+ */
+static void build_sv39_identity(uint64_t root_phys)
+{
+    uint64_t *root = (uint64_t *)root_phys;
+    uint64_t *l1 = (uint64_t *)(root_phys + 4096);
+
+    for (int i = 0; i < PAGE_ENTRIES; i++) {
+        root[i] = 0;
+        l1[i] = 0;
     }
 
-    uint32_t select = fw_cfg_find_file("etc/ramfb");
-    if (select == 0xFFFFFFFFu) {
-        uart_puts("[ramfb] etc/ramfb not found\n");
-        return 0;
+    /* MMIO gigapage: physical address 0, ppn = 0. */
+    root[0] = PTE_FLAGS;
+
+    /* PCIe MMIO gigapage (0x4000_0000..0x8000_0000): VGA, virtio, ... */
+    root[1] = ((0x40000000UL >> 12) << 10) | PTE_FLAGS;
+
+    /* RAM: 512 2 MiB megapages from 0x8000_0000. */
+    for (int i = 0; i < PAGE_ENTRIES; i++) {
+        uint64_t pa = 0x80000000UL + (uint64_t)i * 0x200000UL;
+        l1[i] = ((pa >> 12) << 10) | PTE_FLAGS;
     }
-
-    struct RAMFBCfg cfg;
-    cfg.addr   = bswap64(fb_addr);
-    cfg.fourcc = bswap32(0x34325258u);  /* 'XR24' = DRM_FORMAT_XRGB8888 */
-    cfg.flags  = bswap32(0);
-    cfg.width  = bswap32(width);
-    cfg.height = bswap32(height);
-    cfg.stride = bswap32(width * 4);
-
-    fw_cfg_dma_transfer((select << 16) | FW_CFG_DMA_SELECT | FW_CFG_DMA_WRITE,
-                        sizeof(cfg), (uint64_t)(uintptr_t)&cfg);
-
-    uart_puts("[ramfb] configured successfully\n");
-    return 1;
+    root[2] = (((root_phys + 4096) >> 12) << 10) | PTE_V;
 }
 
-/* ================================================================== */
-/*  Główna procedura                                                  */
-/* ================================================================== */
-void init_main(void) {
-    uart_puts("\n[CoTanOS ini] Start inicjalizacji...\n");
+static void enable_paging(uint64_t root_phys)
+{
+    uint64_t satp = SATP_MODE_SV39 | (root_phys >> 12);
+    __asm__ volatile ("csrw satp, %0" : : "r"(satp));
+    /* Invalidate the TLB — virtual addresses == physical. */
+    __asm__ volatile ("sfence.vma zero, zero" ::: "memory");
+}
 
-    Framebuffer fb;
-    fb.base   = (uint32_t *)0x80400000;
-    fb.width  = 800;
-    fb.height = 600;
+/* Decimal number -> buffer (no libc). */
+static void fmt_dec(char *out, uint64_t v)
+{
+    char tmp[24];
+    int i = 0;
+    if (v == 0) {
+        tmp[i++] = '0';
+    }
+    while (v > 0) {
+        tmp[i++] = (char)('0' + (v % 10));
+        v /= 10;
+    }
+    while (i > 0) {
+        *out++ = tmp[--i];
+    }
+    *out = '\0';
+}
 
-    draw_centered_string(&fb, "CoTanOS", 0xFFFFFFFF, 4);
-    uart_puts("[CoTanOS ini] Napis wyrenderowany w buforze.\n");
+typedef void (*kentry_t)(uint64_t hartid, uint64_t fdt,
+                         struct bootinfo *info);
 
-    if (!ramfb_setup((uint64_t)(uintptr_t)fb.base, fb.width, fb.height)) {
-        uart_puts("[CoTanOS ini] Nie udalo sie skonfigurowac ramfb.\n");
+/* Hex number -> buffer (no libc). */
+static void fmt_hex(char *out, uint64_t v)
+{
+    static const char d[] = "0123456789ABCDEF";
+    out[0] = '0';
+    out[1] = 'X';
+    for (int i = 0; i < 16; i++) {
+        out[2 + i] = d[(v >> ((15 - i) * 4)) & 0xF];
+    }
+    out[18] = '\0';
+}
+
+/*
+ * Boot screen in the macOS style:
+ *   black background + white "COTANOS" centered.
+ * The kernel keeps this screen and adds the spinning star outline
+ * at the bottom until userspace takes over.
+ */
+static void draw_boot_screen(void)
+{
+    if (gfx_init() != 0) {
+        puts("[CoTanBoot] no ramfb — screen skipped.\r\n");
+        return;
     }
 
-    while (1) {
+    bootinfo.fb_addr   = gfx_fb_addr();
+    bootinfo.fb_width  = GFX_WIDTH;
+    bootinfo.fb_height = GFX_HEIGHT;
+    bootinfo.fb_bpp    = GFX_BPP;
+    bootinfo.fb_pitch  = GFX_WIDTH * (GFX_BPP / 8);
+
+    /* Clean, black screen. */
+    gfx_fill(GFX_COL_BG);
+
+    /* White "COTANOS" centered (DejaVu Sans 19 px, anti-aliased). */
+    const char *brand = "COTANOS";
+    gfx_text_aa((GFX_WIDTH - gfx_text_width_aa(brand, &FONT_19)) / 2,
+                GFX_HEIGHT / 2 - 10, brand, GFX_COL_WHITE, &FONT_19);
+
+    puts("[CoTanBoot] boot screen drawn (ramfb 640x480x32) @ ");
+    {
+        char buf[24];
+        fmt_hex(buf, bootinfo.fb_addr);
+        puts(buf);
+    }
+    puts("\r\n");
+}
+
+void init_main(uint64_t hartid, uint64_t fdt_hint)
+{
+    const void *fdt = fdt_locate(fdt_hint);
+    uint64_t mem_base = 0x80000000UL;
+    uint64_t mem_size = 0x08000000UL; /* default 128 MiB (QEMU virt) */
+
+    puts("\r\n[CoTanBoot] S-mode bootloader (BIOS role) — hart ");
+    /* simple decimal number, no libc */
+    {
+        uint64_t v = hartid;
+        char buf[24];
+        int i = 0;
+        if (v == 0) {
+            sbi_console_putchar('0');
+        }
+        while (v > 0) {
+            buf[i++] = (char)('0' + (v % 10));
+            v /= 10;
+        }
+        while (i > 0) {
+            sbi_console_putchar(buf[--i]);
+        }
+    }
+    puts("\r\n");
+
+    if (fdt) {
+        if (fdt_memory(fdt, &mem_base, &mem_size) != 0) {
+            puts("[CoTanBoot] warning: FDT has no /memory node — assuming "
+                 "default 128 MiB.\r\n");
+        }
+        bootinfo.fdt_addr = (uint64_t)fdt;
+    } else {
+        puts("[CoTanBoot] warning: FDT not found — assuming default "
+             "128 MiB.\r\n");
+    }
+    bootinfo.mem_base = mem_base;
+    bootinfo.mem_size = mem_size;
+
+    puts("[CoTanBoot] RAM: base=");
+    for (int i = 60; i >= 0; i -= 4) {
+        char d = "0123456789abcdef"[(mem_base >> i) & 0xF];
+        sbi_console_putchar(d);
+    }
+    puts(" size=");
+    for (int i = 60; i >= 0; i -= 4) {
+        char d = "0123456789abcdef"[(mem_size >> i) & 0xF];
+        sbi_console_putchar(d);
+    }
+    puts("\r\n");
+
+    /* Physical 1:1 mapping (Sv39) — the BIOS job on x86_64. */
+    build_sv39_identity((uint64_t)(uintptr_t)__pg_root);
+    enable_paging((uint64_t)(uintptr_t)__pg_root);
+    puts("[CoTanBoot] Sv39 paging active (1:1 map: RAM + MMIO).\r\n");
+
+    /* The boot screen (black + white CoTanOS); the kernel adds the spinner. */
+    draw_boot_screen();
+
+    /* S-mode timer (CLINT) via SBI — STIE in sie, SIE in sstatus. */
+    __asm__ volatile ("csrs sie, %0" : : "r"(1UL << 5));
+    __asm__ volatile ("csrs sstatus, %0" : : "r"(1UL << 1));
+
+    puts("[CoTanBoot] handing off to 256xtr kernel @ ");
+    for (int i = 60; i >= 0; i -= 4) {
+        char d = "0123456789abcdef"[((uint64_t)KERNEL_ENTRY >> i) & 0xF];
+        sbi_console_putchar(d);
+    }
+    puts("...\r\n");
+
+    kentry_t kernel = (kentry_t)KERNEL_ENTRY;
+    kernel(hartid, (uint64_t)fdt, &bootinfo);
+
+    /* The kernel must not return. */
+    puts("[CoTanBoot] kernel returned — halting.\r\n");
+    for (;;) {
         __asm__ volatile ("wfi");
     }
 }

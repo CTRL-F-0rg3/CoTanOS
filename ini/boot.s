@@ -1,32 +1,44 @@
-.equ STACK_SIZE, 4096
+/* SPDX-FileCopyrightText: 2026 CTRL-F-0rg3
+ * SPDX-License-Identifier: GPL-3.0-only
+ *
+ * CoTanBoot — bootloader entry (S-mode).
+ * Entered via mret from CoTanSBI:
+ *   a0 = hartid
+ *   a1 = adres FDT
+ */
 
-.section .text.init
-.global _start
+    .option norvc
+    .section .text.entry
+    .global _start
 
 _start:
-    # 1. Konfiguracja stosu dla rdzenia 0 (hart 0)
-    la sp, stack_top
+    mv s0, a0                 /* hartid */
+    mv s1, a1                 /* adres FDT */
 
-    # 2. Wyczyszczenie sekcji BSS
+    la sp, __stack_top
+
+    /* Early S-mode trap handler (timer / traps until the kernel takes over). */
+    la t0, boot_trap
+    csrw stvec, t0
+
+    /* --- zero .bss (together with the page-table buffers) --- */
     la t0, __bss_start
     la t1, __bss_end
-b_clear:
-    bge t0, t1, b_done
+.Lbss:
+    bgeu t0, t1, .Lbss_done
     sd zero, 0(t0)
     addi t0, t0, 8
-    j b_clear
+    j .Lbss
+.Lbss_done:
 
-b_done:
-    # 3. Skok do głównej procedury inicjalizacyjnej (C)
+    /* C: void init_main(uint64_t hartid, uint64_t fdt) */
+    mv a0, s0
+    mv a1, s1
     call init_main
 
-    # 4. Bezpieczna pętla zatrzymująca
-_halt:
+    /* init_main jumps to the kernel and does not return. */
+.Lhalt:
     wfi
-    j _halt
+    j .Lhalt
 
-.section .bss
-.align 16
-stack_bottom:
-    .space STACK_SIZE * 4
-stack_top:
+    .size _start, . - _start

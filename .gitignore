@@ -1,2 +1,13 @@
 target/
 /target
+
+# RISC-V boot chain artifacts (ini/ = bootloader, ini/sbi)
+*.o
+ini/sbi/fw.elf
+ini/sbi/fw.bin
+ini/boot.elf
+ini/boot.bin
+
+# Userspace artifacts (new/usp/) — the initrd is embedded in the kernel
+new/arc/rv6/initrd.cpio
+new/usp/rootfs/bin/

@@ -5,7 +5,7 @@
 use core::fmt;
 use core::ptr::NonNull;
 
-use crate::frm::{FrameError, IrqSpinlock, PhysAddr, PhysFrame, Size4Kb};
+use crate::frm::{FrameError, IrqSpinlock, PageSize, PhysAddr, PhysFrame, Size4Kb};
 
 // ============================================================================
 // Constants & Debug Patterns
@@ -272,7 +272,9 @@ impl SlabCache {
     ) -> Result<NonNull<u8>, SlabError> {
         let list = if is_partial { &mut self.partial_pages } else { &mut self.empty_pages };
         let page_addr = *list;
-        let header = &mut *(page_addr.as_usize() as *mut SlabPageHeader);
+        // SAFETY: page_addr comes from this slab's own page list, so it points
+        // to a live, aligned SlabPageHeader.
+        let header = unsafe { &mut *(page_addr.as_usize() as *mut SlabPageHeader) };
 
         debug_assert!(header.magic == SLAB_PAGE_MAGIC);
         debug_assert!(header.free_head != u16::MAX);

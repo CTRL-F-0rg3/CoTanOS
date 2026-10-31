@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("TrangorgePanel")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1dafcf6fec0cab71b5417c9fed5bb8a088adb7d2")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ae9f9a5809e045a38b27e991ba319580ff2a0f44")]
 [assembly: System.Reflection.AssemblyProductAttribute("TrangorgePanel")]
 [assembly: System.Reflection.AssemblyTitleAttribute("TrangorgePanel")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

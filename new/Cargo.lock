@@ -5,6 +5,9 @@ version = 4
 [[package]]
 name = "arc-rv6"
 version = "0.1.0"
+dependencies = [
+ "cotanos-mem",
+]
 
 [[package]]
 name = "arc-x86"
