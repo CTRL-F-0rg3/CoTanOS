@@ -5,6 +5,7 @@
 //! Built for `riscv64gc-unknown-linux-gnu` (crt-static). The kernel speaks
 //! the Linux syscall ABI, so this is a completely ordinary Rust program.
 
+use std::collections::HashMap;
 use std::env;
 use std::time::Instant;
 
@@ -27,8 +28,14 @@ unsafe fn sys_execve(path: *const u8, argv: *const usize, envp: *const usize) ->
 fn main() {
     println!("[rust] Hello from Rust with FULL std (riscv64gc-unknown-linux-gnu)!");
 
+    let mut m: HashMap<&str, u64> = HashMap::new();
+    m.insert("CoTanOS", 1);
+    m.insert("rust", 2);
+    m.insert("std", 3);
+    println!("[rust] HashMap (getrandom-backed hasher): {:?}", m);
+
     let args: Vec<String> = env::args().collect();
-    println!("[rust] argv via /proc/self/cmdline: {:?}", args);
+    println!("[rust] argv read via /proc/self/cmdline: {:?}", args);
 
     let t = Instant::now();
     let v: Vec<u64> = (0..100_000).map(|i| i * i).collect();

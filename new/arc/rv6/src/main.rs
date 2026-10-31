@@ -72,7 +72,7 @@ pub static mut TIMER_TICKS: u64 = 0;
 static mut FB: *mut u32 = core::ptr::null_mut();
 
 /// Log every syscall on the console (boot debugging; off by default).
-pub const DEBUG_SYSCALLS: bool = true;
+pub const DEBUG_SYSCALLS: bool = false;
 
 /// Bitmap backing storage for the physical frame allocator.
 /// Frames are indexed from physical address 0, so the bitmap must cover

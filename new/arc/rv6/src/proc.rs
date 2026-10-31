@@ -23,9 +23,10 @@ pub static mut ALLOCATOR: Option<&'static PhysicalFrameAllocator<Size4Kb>> = Non
 // User address space layout (Sv39, user half = [0, 0x4000_0000_00))
 // ---------------------------------------------------------------------------
 
-/// Top of the user stack (16 pages below it are mapped).
+/// Top of the user stack (16 pages below it are mapped, plus one spare
+/// for the 16-byte upward alignment of sp).
 pub const STACK_TOP: usize = 0x3FC0_0000_00;
-pub const STACK_PAGES: usize = 16;
+pub const STACK_PAGES: usize = 17;
 
 /// mmap search area: above any ET_DYN image (512 MiB), below the kernel
 /// VAs (kernel identity starts at 0x8000_0000 = 2 GiB).
@@ -480,7 +481,9 @@ fn build_stack(
     }
     push(argv_ptrs.len());
 
-    sp & !0xF // 16-byte aligned
+    // No alignment here: glibc's _start reads argc/argv BEFORE its own
+    // `andi sp, sp, -16`, so sp must point exactly at argc.
+    sp
 }
 
 /// Loads `path` from the initrd, replaces the user address space and points
@@ -517,6 +520,17 @@ pub fn exec(path: &[u8], argv: &[Vec<u8>], envp: &[Vec<u8>]) -> Result<(), ()> {
         return Err(());
     }
     let sp = build_stack(argv, envp, loaded.phdr, loaded.phent, loaded.phnum, loaded.base);
+    {
+        // Debug: verify the fresh initial stack.
+        console_puts("[exec] sp=");
+        crate::console::put_hex(sp as u64);
+        for i in 0..4 {
+            let w = unsafe { *((sp + i * 8) as *const usize) };
+            console_puts(" w=");
+            crate::console::put_hex(w as u64);
+        }
+        console_puts("\n");
+    }
 
     // /proc/self/cmdline = NUL-separated argv (Linux format).
     let mut cmd = Vec::new();
@@ -610,24 +624,28 @@ extern "C" fn fault_entry() {
     crate::console::put_hex(stval as u64);
     console_puts(" sepc=");
     crate::console::put_hex(trap_frame().sepc as u64);
+    console_puts(" ra=");
+    crate::console::put_hex(trap_frame().regs[1] as u64);
     console_puts(" tp=");
     crate::console::put_hex(trap_frame().regs[4] as u64);
     console_puts("\n");
-    // Debug: dump 96 bytes around tp (TCB) to trace TLS issues.
-    let tp = trap_frame().regs[4];
-    if tp != 0 {
-        for off in (0usize..96).step_by(16) {
-            let va = tp - 32 + off;
-            let mut line: [u8; 16] = [0; 16];
-            crate::proc::u_read(va, &mut line);
-            console_puts("  tcb+");
-            crate::console::put_hex((tp - 32 + off) as u64);
-            console_puts(": ");
-            for b in line {
-                crate::console::put_hex(b as u64);
-                console_puts(" ");
+    // Debug: walk the user stack for the call chain.
+    {
+        let mut sp = trap_frame().regs[2];
+        for depth in 0..8 {
+            if sp < 0x3FBFFF0000 || sp >= 0x3FC0000000 {
+                break;
             }
-            console_puts("\n");
+            let mut w = [0u8; 8];
+            if crate::proc::u_read(sp, &mut w) {
+                let ra = usize::from_le_bytes(w);
+                console_puts("  stk[");
+                crate::console::put_hex(sp as u64);
+                console_puts("] ra=");
+                crate::console::put_hex(ra as u64);
+                console_puts("\n");
+            }
+            sp += 8;
         }
     }
     kill_process(-1);

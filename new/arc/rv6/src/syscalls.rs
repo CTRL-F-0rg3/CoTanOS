@@ -101,7 +101,9 @@ fn dispatch(n: usize, a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5:
         SYS_CLOCK_GETTIME => sys_clock_gettime(a0, a1),
         SYS_SCHED_YIELD => 0,
         SYS_KILL | SYS_TKILL | SYS_TGKILL => {
-            proc::kill_process(0);
+            crate::console::console_puts("[256xtr] signal ");
+            crate::console::put_dec(a2 as u64);
+            crate::console::console_puts(" — ignoring (single task)\n");
             0
         }
         SYS_RT_SIGACTION | SYS_RT_SIGPROCMASK => 0,
