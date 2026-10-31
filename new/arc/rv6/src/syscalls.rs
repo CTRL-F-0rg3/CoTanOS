@@ -81,7 +81,9 @@ fn dispatch(n: usize, a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5:
         crate::console::put_hex(a1 as u64);
         crate::console::console_puts(",");
         crate::console::put_hex(a2 as u64);
-        crate::console::console_puts(")\n");
+        crate::console::console_puts(") pc=");
+        crate::console::put_hex(trap_frame().sepc as u64);
+        crate::console::console_puts("\n");
     }
     match n {
         SYS_READ => sys_read(a0, a1, a2),
@@ -332,5 +334,14 @@ fn sys_mmap(addr: usize, len: usize, prot: usize, flags: usize, _fd: usize, _off
         return -22;
     }
     let fixed = flags & MAP_FIXED != 0;
+    crate::console::console_puts("[mmap] addr=");
+    crate::console::put_hex(addr as u64);
+    crate::console::console_puts(" len=");
+    crate::console::put_hex(len as u64);
+    crate::console::console_puts(" prot=");
+    crate::console::put_hex(prot as u64);
+    crate::console::console_puts(" flags=");
+    crate::console::put_hex(flags as u64);
+    crate::console::console_puts("\n");
     proc::mmap_anon(addr, len, prot as u8, fixed)
 }

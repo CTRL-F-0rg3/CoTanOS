@@ -101,6 +101,9 @@ pub fn load(data: &[u8], pt: &PageTable, regions: &mut Vec<Region>) -> Option<Lo
         for va in (start..end).step_by(0x1000) {
             let f = crate::proc::allocator().allocate_frame()?;
             let pa = f.start_address().as_usize();
+            // The frame may be recycled from a previous process — the
+            // uninitialised .bss MUST be zeroed before copying.
+            unsafe { core::ptr::write_bytes(pa as *mut u8, 0, 0x1000) };
             // Copy this page's bytes from the file. The segment may start
             // mid-page (p_vaddr unaligned): bytes below p_vaddr stay zero,
             // the tail beyond p_filesz stays zero.

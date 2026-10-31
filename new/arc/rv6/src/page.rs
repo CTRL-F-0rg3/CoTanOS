@@ -71,6 +71,7 @@ impl PageTable {
         }
         let idx = (va >> 12) & 0x1FF;
         Self::table_at(table)[idx] = ((pa >> 12) << 10) | flags;
+        Self::flush_tlb();
         Ok(())
     }
 
@@ -95,7 +96,17 @@ impl PageTable {
         }
         let idx1 = (va >> 21) & 0x1FF;
         Self::table_at(table)[idx1] = ((pa >> 12) << 10) | flags;
+        Self::flush_tlb();
         Ok(())
+    }
+
+    /// Flushes the local TLB after page-table modifications. The RISC-V
+    /// spec does not require TLB shootdown for our single hart, but the
+    /// stale translations MUST be dropped (QEMU caches them).
+    fn flush_tlb() {
+        unsafe {
+            asm!("sfence.vma zero, zero");
+        }
     }
 
     /// Walks to the leaf for `va`; returns (leaf PTE value, leaf PTE ptr,
@@ -146,6 +157,7 @@ impl PageTable {
         if let Some((_, p, _)) = self.leaf(va) {
             // SAFETY: the pointer comes from our own table walk.
             unsafe { *p = (*p & !0x3FF) | (flags & 0x3FF) };
+            Self::flush_tlb();
         }
     }
 
@@ -159,6 +171,7 @@ impl PageTable {
         let (entry, p, level) = self.leaf(va)?;
         // SAFETY: the pointer comes from our own table walk.
         unsafe { *p = 0 };
+        Self::flush_tlb();
         if level != 0 {
             // Identity 2 MiB leaf — the caller must not free this frame.
             return None;

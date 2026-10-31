@@ -460,6 +460,12 @@ fn panic(info: &PanicInfo) -> ! {
     } else {
         console::console_puts("<no message>");
     }
+    if let Some(loc) = info.location() {
+        console::console_puts(" @ ");
+        console::console_puts(loc.file());
+        console::console_puts(":");
+        console::put_dec(loc.line() as u64);
+    }
     console::console_puts("\n");
     halt();
 }

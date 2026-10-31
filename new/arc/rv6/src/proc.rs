@@ -27,9 +27,9 @@ pub static mut ALLOCATOR: Option<&'static PhysicalFrameAllocator<Size4Kb>> = Non
 pub const STACK_TOP: usize = 0x3FC0_0000_00;
 pub const STACK_PAGES: usize = 16;
 
-/// mmap search area: above any ET_DYN image (1 GiB), below the kernel VAs
-/// (kernel identity starts at 0x8000_0000 = 2 GiB).
-pub const MMAP_MIN: usize = 0x2_0000_0000;
+/// mmap search area: above any ET_DYN image (512 MiB), below the kernel
+/// VAs (kernel identity starts at 0x8000_0000 = 2 GiB).
+pub const MMAP_MIN: usize = 0x2000_0000;
 pub const MMAP_MAX: usize = 0x7000_0000;
 
 pub const USER_HALF: usize = 0x4000_0000_00;
@@ -227,10 +227,23 @@ pub fn u_str_array(mut addr: usize, max_args: usize) -> Option<Vec<Vec<u8>>> {
 /// Maps `pages` zeroed pages at `va` with `prot` (1=R,2=W,4=X).
 pub fn map_user_pages(va: usize, pages: usize, prot: u8) -> Result<(), ()> {
     for i in 0..pages {
-        let f = allocator().allocate_frame().ok_or(())?;
+        let f = match allocator().allocate_frame() {
+            Some(f) => f,
+            None => {
+                crate::console::console_puts("[map_user] no frame (free=");
+                crate::console::put_dec(allocator().stats().free_frames as u64);
+                crate::console::console_puts(")\n");
+                return Err(());
+            }
+        };
         let pa = f.start_address().as_usize();
         unsafe { core::ptr::write_bytes(pa as *mut u8, 0, 0x1000) };
-        proc().pt.map(va + i * 0x1000, pa, user_flags(prot), allocator())?;
+        if proc().pt.map(va + i * 0x1000, pa, user_flags(prot), allocator()).is_err() {
+            crate::console::console_puts("[map_user] pt.map failed for ");
+            crate::console::put_hex((va + i * 0x1000) as u64);
+            crate::console::console_puts("\n");
+            return Err(());
+        }
         proc().regions.push(Region { vs: va + i * 0x1000, ve: va + (i + 1) * 0x1000, prot });
     }
     Ok(())
@@ -278,11 +291,17 @@ pub fn mmap_anon(addr: usize, len: usize, prot: u8, fixed: bool) -> isize {
         let mut cand = MMAP_MIN;
         loop {
             if cand + pages * 0x1000 > MMAP_MAX {
+                crate::console::console_puts("[mmap] ENOMEM: cand=");
+                crate::console::put_hex(cand as u64);
+                crate::console::console_puts(" pages=");
+                crate::console::put_hex(pages as u64);
+                crate::console::console_puts("\n");
                 return -12; // ENOMEM
             }
             let mut free = true;
             for i in 0..pages {
-                if proc().pt.flags_of(cand + i * 0x1000) != 0 {
+                let f = proc().pt.flags_of(cand + i * 0x1000);
+                if f != 0 {
                     free = false;
                     break;
                 }
@@ -300,8 +319,14 @@ pub fn mmap_anon(addr: usize, len: usize, prot: u8, fixed: bool) -> isize {
         unmap_range(va, pages * 0x1000);
     }
     if map_user_pages(va, pages, prot).is_err() {
+        crate::console::console_puts("[mmap] map_user_pages failed for ");
+        crate::console::put_hex(va as u64);
+        crate::console::console_puts("\n");
         return -12;
     }
+    crate::console::console_puts("[mmap] -> ");
+    crate::console::put_hex(va as u64);
+    crate::console::console_puts("\n");
     va as isize
 }
 
@@ -310,6 +335,11 @@ pub fn brk(addr: usize) -> usize {
     if addr == 0 {
         return p.brk;
     }
+    crate::console::console_puts("[brk] addr=");
+    crate::console::put_hex(addr as u64);
+    crate::console::console_puts(" old=");
+    crate::console::put_hex(p.brk as u64);
+    crate::console::console_puts("\n");
     let old = p.brk;
     if addr < old {
         unmap_range(addr, old - addr);
