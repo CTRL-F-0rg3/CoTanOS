@@ -76,6 +76,7 @@ void boot_fatal_trap(uint64_t scause, uint64_t sepc)
     for (;;) {
         __asm__ volatile ("wfi");
     }
+    return 0xFFFFFFFFu;
 }
 
 /*
