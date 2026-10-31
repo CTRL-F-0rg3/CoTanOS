@@ -199,7 +199,22 @@ fn irq_save_and_disable() -> IrqState {
     IrqState(rflags & (1 << 9) != 0)
 }
 
-#[cfg(not(all(target_arch = "x86_64", not(test))))]
+/// RISC-V port: mask S-mode interrupts through `sstatus.SIE`.
+#[cfg(all(target_arch = "riscv64", not(test)))]
+#[inline]
+fn irq_save_and_disable() -> IrqState {
+    let sie: usize;
+    // SAFETY: reads sstatus and clears SIE (bit 1). Kernel (S-mode) only.
+    unsafe {
+        core::arch::asm!("csrrci {0}, sstatus, 2", out(reg) sie);
+    }
+    IrqState(sie & 2 != 0)
+}
+
+#[cfg(not(any(
+    all(target_arch = "x86_64", not(test)),
+    all(target_arch = "riscv64", not(test))
+)))]
 #[inline]
 fn irq_save_and_disable() -> IrqState {
     IrqState(false)
@@ -217,7 +232,22 @@ fn irq_restore(state: IrqState) {
     }
 }
 
-#[cfg(not(all(target_arch = "x86_64", not(test))))]
+/// RISC-V port: restore `sstatus.SIE`.
+#[cfg(all(target_arch = "riscv64", not(test)))]
+#[inline]
+fn irq_restore(state: IrqState) {
+    if state.0 {
+        // SAFETY: re-enables S-mode interrupts only if they were enabled before.
+        unsafe {
+            core::arch::asm!("csrsi sstatus, 2");
+        }
+    }
+}
+
+#[cfg(not(any(
+    all(target_arch = "x86_64", not(test)),
+    all(target_arch = "riscv64", not(test))
+)))]
 #[inline]
 fn irq_restore(_state: IrqState) {}
 

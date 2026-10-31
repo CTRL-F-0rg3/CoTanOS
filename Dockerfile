@@ -6,8 +6,8 @@ RUN pacman -Syu --noconfirm --needed \
     rustup \
     riscv64-elf-gcc \
     riscv64-elf-binutils \
-    qemu-emulation-system-riscv64 \
-    qemu-arch-extra \
+    qemu-system-riscv \
+    qemu-ui-gtk \
     git \
     make
 
