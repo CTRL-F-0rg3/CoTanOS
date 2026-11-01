@@ -52,6 +52,12 @@ const SYS_MPROTECT: usize = 226;
 const SYS_GETRANDOM: usize = 278;
 const SYS_RSEQ: usize = 293;
 
+// --- NOWE: brakujące syscalle wywoływane przez glibc ---
+const SYS_PPOLL: usize = 73;
+const SYS_READLINKAT: usize = 78;
+const SYS_FSTAT: usize = 80;
+const SYS_PRLIMIT64: usize = 261;
+
 // mmap / prot flags
 const PROT_READ: usize = 1;
 const PROT_WRITE: usize = 2;
@@ -101,9 +107,16 @@ fn dispatch(n: usize, a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5:
         SYS_CLOCK_GETTIME => sys_clock_gettime(a0, a1),
         SYS_SCHED_YIELD => 0,
         SYS_KILL | SYS_TKILL | SYS_TGKILL => {
-            crate::console::console_puts("[256xtr] signal ");
-            crate::console::put_dec(a2 as u64);
-            crate::console::console_puts(" — ignoring (single task)\n");
+            let sig = a2 as i32;
+            if sig == 6 {
+                // SIGABRT: faktycznie zakończ proces, zamiast go ignorować i zmuszać glibc do ebreak
+                crate::console::console_puts("[256xtr] process aborted (SIGABRT)\n");
+                proc::kill_process(0);
+            } else {
+                crate::console::console_puts("[256xtr] signal ");
+                crate::console::put_dec(a2 as u64);
+                crate::console::console_puts(" — ignoring (single task)\n");
+            }
             0
         }
         SYS_RT_SIGACTION | SYS_RT_SIGPROCMASK => 0,
@@ -127,6 +140,13 @@ fn dispatch(n: usize, a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5:
         SYS_IOCTL => -25, // ENOTTY
         258 => 0, // membarrier: nothing to register (glibc retries on ENOSYS)
         SYS_RSEQ => -38,   // ENOSYS (glibc falls back gracefully)
+        
+        // --- NOWE STUBY, ABY USPOKOIĆ GLIBC ---
+        SYS_PPOLL => -38,
+        SYS_READLINKAT => -38,
+        SYS_FSTAT => sys_fstat(a0, a1),
+        SYS_PRLIMIT64 => -38,
+
         _ => {
             // Everything else: report on the console once, return ENOSYS.
             crate::console::console_puts("[256xtr] unknown syscall ");
@@ -145,7 +165,6 @@ fn sys_write(fd: usize, buf: usize, len: usize) -> isize {
     if !proc::user_range_ok(buf, len) {
         return -14; // EFAULT
     }
-    // SAFETY: range validated against mapped user pages.
     let slice = unsafe { core::slice::from_raw_parts(buf as *const u8, len) };
     crate::vfs::write(fd, slice)
 }
@@ -154,7 +173,6 @@ fn sys_read(fd: usize, buf: usize, len: usize) -> isize {
     if !proc::user_range_ok(buf, len) {
         return -14;
     }
-    // SAFETY: range validated against mapped user pages.
     let slice = unsafe { core::slice::from_raw_parts_mut(buf as *mut u8, len) };
     crate::vfs::read(fd, slice)
 }
@@ -175,8 +193,6 @@ fn sys_set_tid_address(addr: usize) -> isize {
 }
 
 fn sys_futex(_addr: usize, op: usize, _val: usize) -> isize {
-    // FUTEX_WAIT (0) / WAIT_BITSET (9): a spurious wakeup is always legal,
-    // so return immediately. FUTEX_WAKE (1): nothing to wake — one thread.
     match op & 0x7F {
         0 | 9 => 0,
         1 => 0,
@@ -192,7 +208,7 @@ fn sys_nanosleep(req: usize, _rem: usize) -> isize {
     let sec = i64::from_le_bytes(b[0..8].try_into().unwrap());
     let nsec = i64::from_le_bytes(b[8..16].try_into().unwrap());
     let ns = sec * 1_000_000_000 + nsec.max(0);
-    let ticks = (ns / 100).max(1) as u64; // mtime is 10 MHz
+    let ticks = (ns / 100).max(1) as u64;
     let target = proc::mtime() + ticks;
     while proc::mtime() < target {
         unsafe { core::arch::asm!("wfi", options(nomem, nostack)) };
@@ -201,7 +217,6 @@ fn sys_nanosleep(req: usize, _rem: usize) -> isize {
 }
 
 fn sys_clock_gettime(clk: usize, tp: usize) -> isize {
-    // CLOCK_MONOTONIC (1), CLOCK_REALTIME (0) and friends: all from mtime.
     if clk > 8 {
         return -22;
     }
@@ -235,7 +250,6 @@ fn sys_gettimeofday(tv: usize, tz: usize) -> isize {
 }
 
 fn sys_uname(buf: usize) -> isize {
-    // struct utsname: six 65-byte fields.
     let mut out = [0u8; 390];
     let fill = |out: &mut [u8; 390], off: usize, s: &str| {
         let b = s.as_bytes();
@@ -256,21 +270,20 @@ fn sys_uname(buf: usize) -> isize {
 fn sys_sysinfo(buf: usize) -> isize {
     let stats = proc::allocator().stats();
     let mut out = [0u8; 112];
-    // SAFETY: the tick counter is only bumped by the timer trap.
     let ticks = unsafe { crate::TIMER_TICKS };
     let uptime = (ticks * 26) / 1000;
     out[0..8].copy_from_slice(&uptime.to_le_bytes());
-    out[8..16].copy_from_slice(&(1u64).to_le_bytes()); // loadavg
+    out[8..16].copy_from_slice(&(1u64).to_le_bytes());
     out[16..24].copy_from_slice(&((stats.total_frames * 4096) as u64).to_le_bytes());
     out[24..32].copy_from_slice(&((stats.free_frames * 4096) as u64).to_le_bytes());
-    out[32..40].copy_from_slice(&0u64.to_le_bytes()); // sharedram
-    out[40..48].copy_from_slice(&0u64.to_le_bytes()); // bufferram
-    out[48..56].copy_from_slice(&0u64.to_le_bytes()); // totalswap
-    out[56..64].copy_from_slice(&0u64.to_le_bytes()); // freeswap
-    out[64..66].copy_from_slice(&1u16.to_le_bytes()); // procs
-    out[72..80].copy_from_slice(&0u64.to_le_bytes()); // totalhigh
-    out[80..88].copy_from_slice(&0u64.to_le_bytes()); // freehigh
-    out[88..92].copy_from_slice(&1u32.to_le_bytes()); // mem_unit
+    out[32..40].copy_from_slice(&0u64.to_le_bytes());
+    out[40..48].copy_from_slice(&0u64.to_le_bytes());
+    out[48..56].copy_from_slice(&0u64.to_le_bytes());
+    out[56..64].copy_from_slice(&0u64.to_le_bytes());
+    out[64..66].copy_from_slice(&1u16.to_le_bytes());
+    out[72..80].copy_from_slice(&0u64.to_le_bytes());
+    out[80..88].copy_from_slice(&0u64.to_le_bytes());
+    out[88..92].copy_from_slice(&1u32.to_le_bytes());
     if !proc::u_write(buf, &out) {
         return -14;
     }
@@ -281,7 +294,6 @@ fn sys_getrandom(buf: usize, len: usize) -> isize {
     if !proc::user_range_ok(buf, len) {
         return -14;
     }
-    // SAFETY: the tick counter is only bumped by the timer trap.
     let ticks = unsafe { crate::TIMER_TICKS };
     let mut s = (proc::mtime() ^ ticks as u64 ^ 0x9E37_79B9_7F4A_7C15) | 1;
     let mut out: Vec<u8> = Vec::with_capacity(len);
@@ -329,7 +341,6 @@ fn sys_execve(path: usize, argv: usize, envp: usize) -> isize {
 
 fn sys_mmap(addr: usize, len: usize, prot: usize, flags: usize, _fd: usize, _off: usize) -> isize {
     if flags & MAP_ANONYMOUS == 0 {
-        // File-backed mappings are not supported yet.
         return -38; // ENOSYS
     }
     if prot & !(PROT_READ | PROT_WRITE | PROT_EXEC) != 0 {
@@ -346,4 +357,42 @@ fn sys_mmap(addr: usize, len: usize, prot: usize, flags: usize, _fd: usize, _off
     crate::console::put_hex(flags as u64);
     crate::console::console_puts("\n");
     proc::mmap_anon(addr, len, prot as u8, fixed)
+}
+
+// ---------------------------------------------------------------------------
+// NOWA FUNKCJA: sys_fstat (atrapa uspokajająca glibc)
+// ---------------------------------------------------------------------------
+fn sys_fstat(_fd: usize, statbuf: usize) -> isize {
+    if statbuf == 0 {
+        return -14; // EFAULT
+    }
+    
+    #[repr(C)]
+    struct Stat {
+        st_dev: u64, st_ino: u64, st_mode: u32, st_nlink: u32,
+        st_uid: u32, st_gid: u32, st_rdev: u64, _pad1: u64,
+        st_size: i64, st_blksize: i64, _pad2: u32, _pad3: u32,
+        st_blocks: i64, st_atime: i64, st_atime_nsec: u64,
+        st_mtime: i64, st_mtime_nsec: u64, st_ctime: i64,
+        st_ctime_nsec: u64, _unused4: u32, _unused5: u32,
+    }
+
+    // Atrapa: plik regularny (0x8000) z uprawnieniami 0644 (0x1A4)
+    let stat = Stat {
+        st_dev: 1, st_ino: 1, st_mode: 0x81A4, st_nlink: 1,
+        st_uid: 0, st_gid: 0, st_rdev: 0, _pad1: 0,
+        st_size: 0, st_blksize: 4096, _pad2: 0, _pad3: 0,
+        st_blocks: 0, st_atime: 0, st_atime_nsec: 0,
+        st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0,
+        st_ctime_nsec: 0, _unused4: 0, _unused5: 0,
+    };
+
+    let stat_bytes = unsafe { 
+        core::slice::from_raw_parts(&stat as *const _ as *const u8, core::mem::size_of::<Stat>()) 
+    };
+    
+    if !proc::u_write(statbuf, stat_bytes) {
+        return -14; // EFAULT
+    }
+    0
 }
