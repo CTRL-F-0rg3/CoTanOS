@@ -1,0 +1,33 @@
+[driver]
+name = "dp_core"
+version = "1.0.0"
+description = "DisplayPort 1.4 / HDMI 2.0 unified core"
+author = "CoTanOS"
+
+[driver.arch]
+riscv = ["rv32", "rv64"]
+
+[driver.sources]
+c   = ["src/core_io.c", "src/dp_core.c", "src/dp_selftest.c"]
+cxx = ["src/dp_controller.cpp"]
+
+[driver.includes]
+paths = ["include", "."]
+
+[driver.flags]
+c    = ["-std=c11",   "-Wall", "-Wextra", "-Wno-unused-parameter"]
+cxx  = ["-std=c++17", "-Wall", "-Wextra", "-Wno-unused-parameter"]
+
+[driver.deps]
+optional = ["core_io"]      # hash for io primitives
+
+[driver.tests]
+enabled = true
+binary  = "selftest_dp.elf"
+entry   = "dp_selftest_run_all"
+timeout_s = 10
+
+[driver.entrypoint]
+# Called by the driver framework at init
+init_fn  = "dp_controller_init"
+probe_fn = "dp_aux_probe_sink"

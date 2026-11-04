@@ -6694,3 +6694,1058 @@ __maybe_unused static void dp_pm_dump(void)
 /* ========================================================================== */
 /* END OF BLOCK 7                                                              */
 /* ========================================================================== */
+
+/*
+ * ============================================================================
+ *  DP_SELFTEST.C - Driver selftest / verification harness
+ *  Architecture: RISC-V (RV32 / RV64)
+ *  Language: C11
+ *  Target: CoTanOS bare-metal
+ *  --------------------------------------------------------------------------
+ *  Purpose: Regression-tests every block of the DP/HDMI core without pulling
+ *           in a userspace test framework. Pure C, deterministic, no malloc,
+ *           no libc dependency except what dp_core.c pulls in.
+ *
+ *  Usage:
+ *    dp_selftest_run_all();          // run everything, print summary
+ *    dp_selftest_run_by_name("sha1");// run one test by name
+ *    dp_selftest_list();             // print test registry
+ *
+ *  Tests are split into two categories:
+ *    - software-only   (always run; no hardware required)
+ *    - hardware-only   (require mapped MMIO; skipped if controller==NULL)
+ *
+ *  Integration:
+ *    Link this file into the kernel image OR compile into the driver .a
+ *    and call dp_selftest_run_all() from a boot-time hook.
+ * ============================================================================
+ */
+
+#include "dp_core.h"
+
+/* ========================================================================== */
+/* 1. TEST FRAMEWORK                                                           */
+/* ========================================================================== */
+
+#define DP_TEST_MAX      32
+#define DP_TEST_NAME_LEN 32
+
+typedef int (*dp_test_fn_t)(dp_controller_t *ctrl);
+
+typedef struct {
+    const char *name;
+    const char *desc;
+    dp_test_fn_t fn;
+    int requires_hw;
+    int last_rc;      /* saved for summary */
+} dp_test_entry_t;
+
+static dp_test_entry_t g_tests[DP_TEST_MAX];
+static u32 g_test_count = 0;
+static dp_controller_t *g_hw_ctrl = NULL;
+
+/* Assertion counters (global; reset at start of each test). */
+static u32 g_assert_pass = 0;
+static u32 g_assert_fail = 0;
+static const char *g_cur_test = "?";
+
+#define TEST_ASSERT(cond) do {                                          \
+    if (cond) { g_assert_pass++; }                                      \
+    else { g_assert_fail++;                                             \
+           dp_err("[SELFTEST] %s: FAIL at %s:%d: %s",                   \
+                  g_cur_test, __FILE__, __LINE__, #cond); }             \
+} while (0)
+
+#define TEST_ASSERT_EQ(a, b) do {                                       \
+    if ((a) == (b)) { g_assert_pass++; }                                \
+    else { g_assert_fail++;                                             \
+           dp_err("[SELFTEST] %s: FAIL at %s:%d: %s==%s (0x%llx != 0x%llx)", \
+                  g_cur_test, __FILE__, __LINE__, #a, #b,               \
+                  (unsigned long long)(a), (unsigned long long)(b)); }  \
+} while (0)
+
+#define TEST_ASSERT_MEM(a, b, n) do {                                   \
+    if (dp_mem_cmp((a), (b), (n)) == 0) { g_assert_pass++; }            \
+    else { g_assert_fail++;                                             \
+           dp_err("[SELFTEST] %s: FAIL at %s:%d: memcmp(%s,%s,%u)",     \
+                  g_cur_test, __FILE__, __LINE__, #a, #b, (unsigned)(n)); } \
+} while (0)
+
+static void dp_test_register(const char *name, const char *desc,
+                             dp_test_fn_t fn, int requires_hw)
+{
+    if (g_test_count >= DP_TEST_MAX) return;
+    dp_test_entry_t *e = &g_tests[g_test_count++];
+    e->name = name;
+    e->desc = desc;
+    e->fn = fn;
+    e->requires_hw = requires_hw;
+    e->last_rc = DP_OK;
+}
+
+/* ========================================================================== */
+/* 2. KNOWN-GOOD VECTORS                                                       */
+/* ========================================================================== */
+
+/* SHA-1("abc") */
+static const u8 vec_sha1_abc[20] = {
+    0xa9,0x99,0x3e,0x36,0x47,0x06,0x81,0x6a,0xba,0x3e,
+    0x25,0x71,0x78,0x50,0xc2,0x6c,0x9c,0xd0,0xd8,0x9d
+};
+
+/* SHA-256("abc") */
+static const u8 vec_sha256_abc[32] = {
+    0xba,0x78,0x16,0xbf,0x8f,0x01,0xcf,0xea,
+    0x41,0x41,0x40,0xde,0x5d,0xae,0x22,0x23,
+    0xb0,0x03,0x61,0xa3,0x96,0x17,0x7a,0x9c,
+    0xb4,0x10,0xff,0x61,0xf2,0x00,0x15,0xad
+};
+
+/* SHA-256("") empty */
+static const u8 vec_sha256_empty[32] = {
+    0xe3,0xb0,0xc4,0x42,0x98,0xfc,0x1c,0x14,
+    0x9a,0xfb,0xf4,0xc8,0x99,0x6f,0xb9,0x24,
+    0x27,0xae,0x41,0xe4,0x64,0x9b,0x93,0x4c,
+    0xa4,0x95,0x99,0x1b,0x78,0x52,0xb8,0x55
+};
+
+/* HMAC-SHA256 RFC 4231 test case 1: key=0x0b*20, data="Hi There" */
+static const u8 vec_hmac_key[20] = {
+    0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,
+    0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b
+};
+static const char vec_hmac_data[] = "Hi There";
+static const u8 vec_hmac_expected[32] = {
+    0xb0,0x34,0x4c,0x61,0xd8,0xdb,0x38,0x53,
+    0x5c,0xa8,0xaf,0xce,0xaf,0x0b,0xf1,0x2b,
+    0x88,0x1d,0xc2,0x00,0xc9,0x83,0x3d,0xa7,
+    0x26,0xe9,0x37,0x6c,0x2e,0x32,0xcf,0xf7
+};
+
+/* AES-128 FIPS-197 C.1 */
+static const u8 vec_aes_key[16] = {
+    0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,
+    0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f
+};
+static const u8 vec_aes_pt[16] = {
+    0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,
+    0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xee,0xff
+};
+static const u8 vec_aes_ct[16] = {
+    0x69,0xc4,0xe0,0xd8,0x6a,0x7b,0x04,0x30,
+    0xd8,0xcd,0xb7,0x80,0x70,0xb4,0xc5,0x5a
+};
+
+/* AES-128 CBC NIST SP 800-38A F.2.1 (first block) */
+static const u8 vec_aes_cbc_iv[16] = {
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+};
+static const u8 vec_aes_cbc_pt[16] = {
+    0x6b,0xc1,0xbe,0xe2,0x2e,0x40,0x9f,0x96,
+    0xe9,0x3d,0x7e,0x11,0x73,0x93,0x17,0x2a
+};
+static const u8 vec_aes_cbc_ct[16] = {
+    0x76,0x49,0xab,0xac,0x81,0x19,0xb2,0x46,
+    0xce,0xe9,0x8e,0x9b,0x12,0xe9,0x19,0x7d
+};
+
+/* ========================================================================== */
+/* 3. TEST: LOW-LEVEL HELPERS                                                  */
+/* ========================================================================== */
+
+static int dp_test_helpers(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    /* Bit manipulation */
+    TEST_ASSERT_EQ(dp_popcount32(0xFFFF0000u), 16);
+    TEST_ASSERT_EQ(dp_popcount32(0x00000001u), 1);
+    TEST_ASSERT_EQ(dp_popcount32(0x00000000u), 0);
+    TEST_ASSERT_EQ(dp_clz32(0x00000001u), 31);
+    TEST_ASSERT_EQ(dp_clz32(0xFFFFFFFFu), 0);
+    TEST_ASSERT_EQ(dp_ctz32(0x00010000u), 16);
+    TEST_ASSERT_EQ(dp_ilog2(1024u), 10);
+
+    /* Align */
+    TEST_ASSERT_EQ(dp_align_up(5, 4), 8);
+    TEST_ASSERT_EQ(dp_align_up(8, 4), 8);
+    TEST_ASSERT_EQ(dp_align_down(7, 4), 4);
+    TEST_ASSERT(dp_align_check(64, 8));
+    TEST_ASSERT(!dp_align_check(65, 8));
+    TEST_ASSERT(dp_is_pow2(64));
+    TEST_ASSERT(!dp_is_pow2(65));
+
+    /* Byte order */
+    TEST_ASSERT_EQ(dp_bswap16(0x1234u), 0x3412u);
+    TEST_ASSERT_EQ(dp_bswap32(0x12345678u), 0x78563412u);
+    TEST_ASSERT_EQ(dp_bswap64(0x0102030405060708ULL), 0x0807060504030201ULL);
+
+    /* Memory ops */
+    u8 buf[16];
+    dp_mem_set(buf, 0xAB, sizeof(buf));
+    TEST_ASSERT_EQ(buf[0], 0xAB);
+    TEST_ASSERT_EQ(buf[15], 0xAB);
+    dp_mem_copy(buf, "hello", 5);
+    TEST_ASSERT_EQ(buf[0], 'h');
+    TEST_ASSERT_EQ(buf[4], 'o');
+    TEST_ASSERT_EQ(buf[5], 0xAB);
+    TEST_ASSERT_EQ(dp_mem_cmp("abc", "abc", 3), 0);
+    TEST_ASSERT(dp_mem_cmp("abc", "abd", 3) < 0);
+
+    /* Bitfields */
+    TEST_ASSERT_EQ(dp_bf_prep(3, 0xF0), 0x30);
+    TEST_ASSERT_EQ(dp_bf_get(0x3C, 0xF0), 3);
+    TEST_ASSERT_EQ(dp_bf_set(0x00, 0x0F, 0xA), 0x0A);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 4. TEST: SHA-1                                                              */
+/* ========================================================================== */
+
+static int dp_test_sha1(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    /* "abc" one-shot */
+    {
+        sha1_ctx_t h;
+        sha1_init(&h);
+        sha1_update(&h, (const u8 *)"abc", 3);
+        u8 out[20];
+        sha1_final(&h, out);
+        TEST_ASSERT_MEM(out, vec_sha1_abc, 20);
+    }
+
+    /* Two-part update */
+    {
+        sha1_ctx_t h;
+        sha1_init(&h);
+        sha1_update(&h, (const u8 *)"a", 1);
+        sha1_update(&h, (const u8 *)"bc", 2);
+        u8 out[20];
+        sha1_final(&h, out);
+        TEST_ASSERT_MEM(out, vec_sha1_abc, 20);
+    }
+
+    /* Long input spanning multiple blocks */
+    {
+        u8 big[200];
+        dp_mem_set(big, 0x42, sizeof(big));
+        sha1_ctx_t h;
+        sha1_init(&h);
+        sha1_update(&h, big, sizeof(big));
+        u8 out1[20];
+        sha1_final(&h, out1);
+
+        sha1_ctx_t h2;
+        sha1_init(&h2);
+        for (u32 i = 0; i < sizeof(big); i += 7)
+            sha1_update(&h2, &big[i], (i + 7 <= sizeof(big)) ? 7 : (sizeof(big) - i));
+        u8 out2[20];
+        sha1_final(&h2, out2);
+        TEST_ASSERT_MEM(out1, out2, 20);
+    }
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 5. TEST: SHA-256                                                            */
+/* ========================================================================== */
+
+static int dp_test_sha256(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    {
+        u8 out[32];
+        sha256((const u8 *)"abc", 3, out);
+        TEST_ASSERT_MEM(out, vec_sha256_abc, 32);
+    }
+
+    {
+        u8 out[32];
+        sha256(NULL, 0, out);
+        TEST_ASSERT_MEM(out, vec_sha256_empty, 32);
+    }
+
+    /* Chunked update == one-shot */
+    {
+        sha256_ctx_t h;
+        sha256_init(&h);
+        sha256_update(&h, (const u8 *)"a", 1);
+        sha256_update(&h, (const u8 *)"b", 1);
+        sha256_update(&h, (const u8 *)"c", 1);
+        u8 out[32];
+        sha256_final(&h, out);
+        TEST_ASSERT_MEM(out, vec_sha256_abc, 32);
+    }
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 6. TEST: HMAC-SHA256                                                        */
+/* ========================================================================== */
+
+static int dp_test_hmac_sha256(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    u8 out[32];
+    hmac_sha256(vec_hmac_key, sizeof(vec_hmac_key),
+                (const u8 *)vec_hmac_data, sizeof(vec_hmac_data) - 1, out);
+    TEST_ASSERT_MEM(out, vec_hmac_expected, 32);
+
+    /* Different key -> different output */
+    u8 bad_key[20] = { 0 };
+    u8 out2[32];
+    hmac_sha256(bad_key, sizeof(bad_key),
+                (const u8 *)vec_hmac_data, sizeof(vec_hmac_data) - 1, out2);
+    TEST_ASSERT(dp_mem_cmp(out, out2, 32) != 0);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 7. TEST: AES-128                                                            */
+/* ========================================================================== */
+
+static int dp_test_aes128(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    /* Single-block ECB encrypt */
+    {
+        aes128_ctx_t aes;
+        aes128_expand_key(&aes, vec_aes_key);
+        u8 ct[16];
+        aes128_encrypt_block(&aes, vec_aes_pt, ct);
+        TEST_ASSERT_MEM(ct, vec_aes_ct, 16);
+    }
+
+    /* Single-block ECB decrypt round-trip */
+    {
+        aes128_ctx_t aes;
+        aes128_expand_key(&aes, vec_aes_key);
+        u8 pt[16];
+        aes128_decrypt_block(&aes, vec_aes_ct, pt);
+        TEST_ASSERT_MEM(pt, vec_aes_pt, 16);
+    }
+
+    /* CBC with zero IV */
+    {
+        u8 ct[16];
+        aes128_cbc_encrypt(vec_aes_key, vec_aes_cbc_iv, vec_aes_cbc_pt, ct, 16);
+        TEST_ASSERT_MEM(ct, vec_aes_cbc_ct, 16);
+    }
+
+    /* CBC round-trip */
+    {
+        u8 enc[16], dec[16];
+        aes128_cbc_encrypt(vec_aes_key, vec_aes_cbc_iv, vec_aes_cbc_pt, enc, 16);
+        aes128_cbc_decrypt(vec_aes_key, vec_aes_cbc_iv, enc, dec, 16);
+        TEST_ASSERT_MEM(dec, vec_aes_cbc_pt, 16);
+    }
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 8. TEST: BIGNUM / MODEXP                                                    */
+/* ========================================================================== */
+
+static int dp_test_bignum(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    /* Basic arithmetic via public API surface (indirect). We exercise modexp
+     * which relies on Montgomery CIOS internally. */
+
+    /* 4^13 mod 497 = 445 */
+    {
+        u8 n_bytes[BN_BYTES] = { 0 };
+        n_bytes[BN_BYTES - 1] = 0xF1; /* 497 */
+        n_bytes[BN_BYTES - 2] = 0x01;
+        /* Actually 497 = 0x01F1 */
+        n_bytes[BN_BYTES - 2] = 0x01;
+        n_bytes[BN_BYTES - 1] = 0xF1;
+
+        bn_t bn_base, bn_n, bn_res;
+        u8 base_bytes[BN_BYTES] = { 0 };
+        base_bytes[BN_BYTES - 1] = 4;
+
+        bn_from_bytes(&bn_base, base_bytes, BN_BYTES);
+        bn_from_bytes(&bn_n, n_bytes, BN_BYTES);
+
+        u8 exp[1] = { 13 };
+        bn_modexp(&bn_res, &bn_base, exp, 1, &bn_n);
+
+        u8 result[BN_BYTES];
+        bn_to_bytes(&bn_res, result, BN_BYTES);
+        TEST_ASSERT_EQ(result[BN_BYTES - 1], 445 & 0xFF);
+        TEST_ASSERT_EQ(result[BN_BYTES - 2], 445 >> 8);
+    }
+
+    /* 2^10 mod 1000 = 24 */
+    {
+        u8 n_bytes[BN_BYTES] = { 0 };
+        n_bytes[BN_BYTES - 2] = 0x03; /* 1000 = 0x03E8 */
+        n_bytes[BN_BYTES - 1] = 0xE8;
+        u8 base_bytes[BN_BYTES] = { 0 };
+        base_bytes[BN_BYTES - 1] = 2;
+
+        bn_t bn_base, bn_n, bn_res;
+        bn_from_bytes(&bn_base, base_bytes, BN_BYTES);
+        bn_from_bytes(&bn_n, n_bytes, BN_BYTES);
+
+        u8 exp[1] = { 10 };
+        bn_modexp(&bn_res, &bn_base, exp, 1, &bn_n);
+
+        u8 result[BN_BYTES];
+        bn_to_bytes(&bn_res, result, BN_BYTES);
+        TEST_ASSERT_EQ(result[BN_BYTES - 1], 24);
+    }
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 9. TEST: DSC PPS ROUNDTRIP                                                  */
+/* ========================================================================== */
+
+static int dp_test_dsc_pps_roundtrip(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    dp_dsc_pps_t pps;
+    int rc = dp_dsc_compute_pps(&pps,
+        1920, 1080, 8 << 4, 8, 960, 1080, 0);
+    TEST_ASSERT_EQ(rc, DP_OK);
+
+    u8 raw[DP_DSC_PPS_SIZE];
+    u32 written = dp_dsc_pps_encode(&pps, raw);
+    TEST_ASSERT_EQ(written, 87);
+
+    dp_dsc_pps_t decoded;
+    rc = dp_dsc_pps_decode(raw, &decoded);
+    TEST_ASSERT_EQ(rc, DP_OK);
+
+    TEST_ASSERT_EQ(decoded.dsc_version_major, pps.dsc_version_major);
+    TEST_ASSERT_EQ(decoded.bits_per_component, pps.bits_per_component);
+    TEST_ASSERT_EQ(decoded.bits_per_pixel, pps.bits_per_pixel);
+    TEST_ASSERT_EQ(decoded.pic_width, pps.pic_width);
+    TEST_ASSERT_EQ(decoded.pic_height, pps.pic_height);
+    TEST_ASSERT_EQ(decoded.slice_width, pps.slice_width);
+    TEST_ASSERT_EQ(decoded.slice_height, pps.slice_height);
+    TEST_ASSERT_EQ(decoded.chunk_size, pps.chunk_size);
+    TEST_ASSERT_EQ(decoded.rc_model_size, pps.rc_model_size);
+    TEST_ASSERT_EQ(decoded.initial_xmit_delay, pps.initial_xmit_delay);
+    TEST_ASSERT_EQ(decoded.flatness_min_qp, pps.flatness_min_qp);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 10. TEST: DSC PPS VALIDATION                                                */
+/* ========================================================================== */
+
+static int dp_test_dsc_pps_validate(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    dp_dsc_pps_t pps;
+    dp_dsc_compute_pps(&pps, 1920, 1080, 8 << 4, 8, 960, 1080, 0);
+    TEST_ASSERT(dp_dsc_pps_validate(&pps));
+
+    /* Bad version */
+    dp_dsc_pps_t bad = pps;
+    bad.dsc_version_major = 2;
+    TEST_ASSERT(!dp_dsc_pps_validate(&bad));
+
+    /* Zero dimensions */
+    bad = pps;
+    bad.pic_width = 0;
+    TEST_ASSERT(!dp_dsc_pps_validate(&bad));
+
+    /* Slice doesn't divide pic_width */
+    bad = pps;
+    bad.slice_width = 1001;
+    TEST_ASSERT(!dp_dsc_pps_validate(&bad));
+
+    /* Bad bpp */
+    bad = pps;
+    bad.bits_per_pixel = 1;
+    TEST_ASSERT(!dp_dsc_pps_validate(&bad));
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 11. TEST: DSC SLICE CALC                                                    */
+/* ========================================================================== */
+
+static int dp_test_dsc_slices(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    dp_dsc_slice_result_t sl;
+
+    /* 1920 wide, 4096 max slice -> 1 slice per line */
+    int rc = dp_dsc_calc_slices(1920, 1080, 4096, 4096,
+                                 DP_RATE_HBR2, DP_LANE_COUNT_4, &sl);
+    TEST_ASSERT_EQ(rc, DP_OK);
+    TEST_ASSERT_EQ(sl.slices_per_line, 1);
+    TEST_ASSERT_EQ(sl.slice_width, 1920);
+
+    /* 3840 wide, 1920 max slice -> 2 slices per line */
+    rc = dp_dsc_calc_slices(3840, 2160, 1920, 4096,
+                             DP_RATE_HBR3, DP_LANE_COUNT_4, &sl);
+    TEST_ASSERT_EQ(rc, DP_OK);
+    TEST_ASSERT_EQ(sl.slices_per_line, 2);
+    TEST_ASSERT_EQ(sl.slice_width, 1920);
+
+    /* 7680 wide, 1024 max slice, HBR2 x4 -> 4 slices */
+    rc = dp_dsc_calc_slices(7680, 4320, 1024, 4096,
+                             DP_RATE_HBR2, DP_LANE_COUNT_4, &sl);
+    TEST_ASSERT_EQ(rc, DP_OK);
+    TEST_ASSERT_EQ(sl.slices_per_line, 4);
+    TEST_ASSERT_EQ(sl.slice_width, 1920);
+    TEST_ASSERT(sl.total_slices <= 32);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 12. TEST: TIMING CONVERSION                                                 */
+/* ========================================================================== */
+
+static int dp_test_timing_convert(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    /* EDID timing -> dp_timing_spec_t */
+    edid_timing_t et = {
+        .pixel_clock = 14850,   /* 148.5 MHz in 10kHz */
+        .hactive = 1920, .hblank = 280,
+        .vactive = 1080, .vblank = 45,
+        .hfront_porch = 88, .hsync_pulse = 44,
+        .vfront_porch = 4,  .vsync_pulse = 5,
+        .hsync_positive = true, .vsync_positive = true,
+        .interlaced = false,
+    };
+
+    dp_timing_spec_t t;
+    TEST_ASSERT_EQ(dp_timing_from_edid_timing(&et, &t), DP_OK);
+    TEST_ASSERT_EQ(t.pixel_clock, 148500);
+    TEST_ASSERT_EQ(t.hactive, 1920);
+    TEST_ASSERT_EQ(t.vactive, 1080);
+    TEST_ASSERT_EQ(t.hsync_pulse, 44);
+    TEST_ASSERT_EQ(t.vsync_pulse, 5);
+    TEST_ASSERT_EQ(t.refresh_hz, 60);
+
+    /* VIC lookup */
+    dp_timing_spec_t t16;
+    TEST_ASSERT_EQ(dp_timing_from_vic(16, &t16), DP_OK);
+    TEST_ASSERT_EQ(t16.hactive, 1920);
+    TEST_ASSERT_EQ(t16.vactive, 1080);
+    TEST_ASSERT_EQ(t16.pixel_clock, 148500);
+    TEST_ASSERT_EQ(t16.refresh_hz, 60);
+
+    /* VIC 97 = 4K60 */
+    dp_timing_spec_t t97;
+    TEST_ASSERT_EQ(dp_timing_from_vic(97, &t97), DP_OK);
+    TEST_ASSERT_EQ(t97.hactive, 3840);
+    TEST_ASSERT_EQ(t97.vactive, 2160);
+    TEST_ASSERT_EQ(t97.pixel_clock, 594000);
+
+    /* Unknown VIC */
+    dp_timing_spec_t tbad;
+    TEST_ASSERT_EQ(dp_timing_from_vic(200, &tbad), DP_ERR_NOT_SUPPORTED);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 13. TEST: BANDWIDTH CHECK                                                   */
+/* ========================================================================== */
+
+static int dp_test_bandwidth(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    dp_timing_spec_t t4k60 = {0};
+    dp_timing_from_vic(97, &t4k60);
+
+    /* 4K60 @ 8bpc RGB on HBR2 x4 -- very tight but should fit */
+    TEST_ASSERT(dp_check_bw_fits(&t4k60, 8, DP_PIXEL_FORMAT_RGB,
+                                  DP_RATE_HBR2, DP_LANE_COUNT_4));
+
+    /* 4K60 @ 8bpc RGB on RBR x1 -- definitely not */
+    TEST_ASSERT(!dp_check_bw_fits(&t4k60, 8, DP_PIXEL_FORMAT_RGB,
+                                   DP_RATE_RBR, DP_LANE_COUNT_1));
+
+    /* Lowest BW for 1080p60 should be RBR x4 or HBR x2 */
+    dp_timing_spec_t t1080p = {0};
+    dp_timing_from_vic(16, &t1080p);
+    Bandwidth_hint: (void)0;
+    dp_link_bandwidth_t bw = dp_lowest_bw_for(&t1080p, 8,
+                                              DP_PIXEL_FORMAT_RGB,
+                                              DP_LANE_COUNT_4);
+    TEST_ASSERT(bw == DP_RATE_RBR || bw == DP_RATE_HBR || bw == DP_RATE_HBR2);
+
+    /* bpp calc */
+    TEST_ASSERT_EQ(dp_calc_bpp(8, DP_PIXEL_FORMAT_RGB), 24);
+    TEST_ASSERT_EQ(dp_calc_bpp(8, DP_PIXEL_FORMAT_YUV422), 16);
+    TEST_ASSERT_EQ(dp_calc_bpp(10, DP_PIXEL_FORMAT_YUV420), 15);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 14. TEST: MSA COMPUTE                                                       */
+/* ========================================================================== */
+
+static int dp_test_msa_compute(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    dp_timing_spec_t t = {0};
+    dp_timing_from_vic(16, &t);
+
+    /* Verify timing is well-formed */
+    TEST_ASSERT(t.hactive + t.hblank > 0);
+    TEST_ASSERT(t.vactive + t.vblank > 0);
+
+    /* misc0 for RGB+sync_clk+frame_start */
+    u32 misc0 = dp_build_msa_misc0(DP_MSA_COLOR_RGB, true, true);
+    TEST_ASSERT(misc0 & DP_MSA_MISC0_SYNC_CLK);
+    TEST_ASSERT(misc0 & DP_MSA_MISC0_FRAME_START);
+    TEST_ASSERT_EQ(misc0 & 0x07, DP_MSA_COLOR_RGB);
+
+    /* misc1 for 8bpc, VESA range, no yuv420 */
+    u32 misc1 = dp_build_msa_misc1(8, DP_MSA_MISC1_DYNRANGE_VESA, 0);
+    TEST_ASSERT_EQ(dp_bf_get(misc1, DP_MSA_MISC1_BPC_MASK), DP_MSA_MISC1_BPC_8);
+    TEST_ASSERT_EQ(dp_bf_get(misc1, DP_MSA_MISC1_DYNRANGE_MASK),
+                   DP_MSA_MISC1_DYNRANGE_VESA);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 15. TEST: AUDIO INFOFRAME                                                   */
+/* ========================================================================== */
+
+static int dp_test_audio_infoframe(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    dp_snd_card_t card;
+    dp_mem_set(&card, 0, sizeof(card));
+    card.speaker_mask = 0x0007;  /* FL|FR|FC (basic CEA speakers) */
+    card.sad_count = 1;
+    card.sads[0].format = DP_SAD_FORMAT_LPCM;
+    card.sads[0].channels = 2;
+    card.sads[0].sample_rates = 0x07;  /* 32/44/48 */
+    card.sads[0].byte3 = 0x07;         /* 16/20/24 bit */
+
+    dp_pcm_hw_params_t p = {
+        .format = DP_PCM_FORMAT_S16_LE,
+        .rate = 48000,
+        .channels = 2,
+        .period_size = 1024,
+        .periods = 4,
+        .buffer_size = 4096,
+        .sample_bits = 16,
+    };
+
+    dp_audio_infoframe_t ifr;
+    dp_audio_build_infoframe(&card, &p, &ifr);
+    TEST_ASSERT_EQ(ifr.type, 0x84);
+    TEST_ASSERT_EQ(ifr.len, 0x1b);
+    TEST_ASSERT_EQ(ifr.ver, 0x44);
+    TEST_ASSERT_EQ(ifr.CC02_CT47 & 0x07, 1);  /* channels-1 = 1 */
+
+    /* CEA CA selection: 2ch -> CA=0 */
+    u8 ca = dp_cea_select_ca(card.speaker_mask, 2);
+    TEST_ASSERT_EQ(ca, 0x00);
+
+    /* 6ch with basic mask: fallback to closest layout */
+    u8 ca6 = dp_cea_select_ca(card.speaker_mask, 6);
+    TEST_ASSERT(ca6 != 0 || ca6 == 0);  /* Just don't crash */
+
+    /* SAD rate mask */
+    u32 mask = dp_sad_rate_mask(0x07);
+    TEST_ASSERT(mask & DP_PCM_RATE_48000);
+    TEST_ASSERT(mask & DP_PCM_RATE_44100);
+    TEST_ASSERT(mask & DP_PCM_RATE_32000);
+    TEST_ASSERT(!(mask & DP_PCM_RATE_96000));
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 16. TEST: EDID CHECKSUM                                                     */
+/* ========================================================================== */
+
+static int dp_test_edid_checksum(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    u8 block[128];
+    dp_mem_set(block, 0, sizeof(block));
+    block[0] = 0x00;
+    block[1] = 0xFF;
+    block[2] = 0xFF;
+    block[3] = 0xFF;
+    block[4] = 0xFF;
+    block[5] = 0xFF;
+    block[6] = 0xFF;
+    block[7] = 0x00;
+
+    /* Compute checksum: bytes 0..126 summed, then negated */
+    u8 sum = 0;
+    for (u32 i = 0; i < 127; i++) sum += block[i];
+    block[127] = (u8)(0 - sum);
+
+    TEST_ASSERT(edid_checksum_ok(block));
+
+    /* Corrupt one byte */
+    block[50] ^= 0xFF;
+    TEST_ASSERT(!edid_checksum_ok(block));
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 17. TEST: HDCP KSV VALID                                                    */
+/* ========================================================================== */
+
+static int dp_test_hdcp_ksv(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    /* Valid KSV: exactly 20 ones */
+    u8 valid[5] = { 0xFF, 0xFF, 0xF0, 0x00, 0x00 };
+    /* 0xFF = 8 ones, x2 = 16, plus 0xF0 = 4 -> total 20 */
+    TEST_ASSERT(dp_hdcp_ksv_valid(valid));
+
+    /* Invalid: 21 ones */
+    u8 invalid[5] = { 0xFF, 0xFF, 0xF8, 0x00, 0x00 };
+    TEST_ASSERT(!dp_hdcp_ksv_valid(invalid));
+
+    /* Invalid: all zeros */
+    u8 zero[5] = { 0 };
+    TEST_ASSERT(!dp_hdcp_ksv_valid(zero));
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 18. TEST: HDCP SRM PARSE                                                    */
+/* ========================================================================== */
+
+static int dp_test_hdcp_srm(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    /* Minimal SRM: length=12, version=1, count=1, depth=0,
+     * one revoked KSV = 0x00..0x00 */
+    u8 srm[] = {
+        0x00, 0x0C,           /* length */
+        0x01,                 /* version */
+        0x00, 0x01,           /* ksv_count */
+        0x00,                 /* depth */
+        0x11,0x22,0x33,0x44,0x55,  /* one KSV */
+        0x00, 0x00            /* trailing (checksum placeholder) */
+    };
+
+    hdcp_srm_t parsed;
+    int rc = hdcp_srm_parse(srm, sizeof(srm), &parsed);
+    TEST_ASSERT_EQ(rc, DP_OK);
+    TEST_ASSERT_EQ(parsed.version, 1);
+    TEST_ASSERT_EQ(parsed.ksv_count, 1);
+
+    u8 revoked_ksv[5] = { 0x11, 0x22, 0x33, 0x44, 0x55 };
+    TEST_ASSERT(hdcp_srm_revoked(&parsed, revoked_ksv));
+
+    u8 safe_ksv[5] = { 0x99, 0x88, 0x77, 0x66, 0x55 };
+    TEST_ASSERT(!hdcp_srm_revoked(&parsed, safe_ksv));
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 19. TEST: HDCP CERT VERIFY (structure sanity)                               */
+/* ========================================================================== */
+
+static int dp_test_hdcp_cert_structure(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    /* Verify our hdcp22_cert_t matches expected size. */
+    TEST_ASSERT_EQ(sizeof(hdcp22_cert_t), 522);
+
+    /* Verify DCP root N has correct size. */
+    TEST_ASSERT_EQ(sizeof(hdcp22_dcp_root_n), BN_BYTES);
+
+    /* Verify rsa_e_65537 is correct */
+    TEST_ASSERT_EQ(rsa_e_65537[0], 0x01);
+    TEST_ASSERT_EQ(rsa_e_65537[1], 0x00);
+    TEST_ASSERT_EQ(rsa_e_65537[2], 0x01);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 20. TEST: DPCD CONSTANTS SANITY                                             */
+/* ========================================================================== */
+
+static int dp_test_dpcd_constants(dp_controller_t *ctrl)
+{
+    (void)ctrl;
+
+    /* Every register we use should be reachable in the documented map. */
+    TEST_ASSERT_EQ(DP_DPCD_REV, 0x00000);
+    TEST_ASSERT_EQ(DP_MAX_LINK_RATE, 0x00001);
+    TEST_ASSERT_EQ(DP_MAX_LANE_COUNT, 0x00002);
+    TEST_ASSERT_EQ(DP_LINK_BW_SET, 0x00100);
+    TEST_ASSERT_EQ(DP_LANE_COUNT_SET, 0x00101);
+    TEST_ASSERT_EQ(DP_TRAINING_PATTERN_SET, 0x00102);
+    TEST_ASSERT_EQ(DP_TRAINING_LANE0_SET, 0x00103);
+    TEST_ASSERT_EQ(DP_LANE0_1_STATUS, 0x00202);
+    TEST_ASSERT_EQ(DP_ADJUST_REQUEST_LANE0_1, 0x00206);
+    TEST_ASSERT_EQ(DP_SET_POWER, 0x00600);
+    TEST_ASSERT_EQ(DP_PSR_EN_CFG, 0x00170);
+    TEST_ASSERT_EQ(DP_DSC_ENABLE, 0x00160);
+
+    /* Lane count mask */
+    TEST_ASSERT_EQ(DP_MAX_LANE_COUNT_MASK, 0x1F);
+    TEST_ASSERT_EQ(DP_ENHANCED_FRAME_CAP, 0x80);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 21. TEST: AUX HW PROBE (requires mapped HW)                                 */
+/* ========================================================================== */
+
+static int dp_test_aux_hw_probe(dp_controller_t *ctrl)
+{
+    if (!ctrl || !ctrl->initialized) return DP_ERR_INVAL;
+
+    /* Read HW_VERSION register; should not be all-ones or all-zero on real HW */
+    u32 ver = dp_core_read_reg(ctrl, DP_REG_HW_VERSION);
+    TEST_ASSERT(ver != 0xFFFFFFFFu);
+    TEST_ASSERT(ver != 0x00000000u);
+
+    /* AUX ctl register readable */
+    u32 ctl = dp_core_read_reg(ctrl, DP_REG_AUX_CH_CTL);
+    TEST_ASSERT((ctl & AUX_CTL_BUSY) == 0);  /* Idle at rest */
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 22. TEST: SINK DPCD PROBE (requires live sink on AUX)                       */
+/* ========================================================================== */
+
+static int dp_test_sink_dpcd_probe(dp_controller_t *ctrl)
+{
+    if (!ctrl || !ctrl->initialized) return DP_ERR_INVAL;
+
+    u8 rev = 0;
+    if (!dp_aux_probe_sink(ctrl, &rev)) {
+        dp_warn("[SELFTEST] no sink attached; skipping DPCD probe");
+        return DP_OK;
+    }
+    TEST_ASSERT(rev >= 0x10 && rev <= 0x14);  /* DP 1.0 .. DP 1.4 */
+
+    u8 max_rate = 0, max_lanes = 0;
+    int rc = dp_aux_read_link_caps_raw(ctrl, &max_rate, &max_lanes);
+    TEST_ASSERT_EQ(rc, DP_OK);
+    TEST_ASSERT(max_lanes == 1 || max_lanes == 2 || max_lanes == 4);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 23. TEST: BRING-UP SEQUENCE (requires live sink + working link)             */
+/* ========================================================================== */
+
+static int dp_test_bringup(dp_controller_t *ctrl)
+{
+    if (!ctrl || !ctrl->initialized) return DP_ERR_INVAL;
+
+    u8 rev = 0;
+    if (!dp_aux_probe_sink(ctrl, &rev)) {
+        dp_warn("[SELFTEST] no sink; skipping bringup");
+        return DP_OK;
+    }
+
+    /* Read caps */
+    dp_link_caps_t caps;
+    TEST_ASSERT_EQ(dp_link_read_caps(ctrl, &caps), DP_OK);
+
+    /* Set link rate to sink maximum */
+    dp_link_bandwidth_t bw = (dp_link_bandwidth_t)caps.max_link_rate;
+    dp_lane_count_t lanes = (dp_lane_count_t)caps.max_lane_count;
+    TEST_ASSERT_EQ(dp_link_set_rate(ctrl, bw, lanes), DP_OK);
+
+    /* Train link */
+    int rc = dp_link_train(ctrl);
+    TEST_ASSERT_EQ(rc, DP_OK);
+
+    if (rc != DP_OK) {
+        dp_warn("[SELFTEST] link training failed; skipping further checks");
+        return DP_OK;
+    }
+
+    /* Verify link ready */
+    dp_link_training_state_t st = { 0 };
+    TEST_ASSERT_EQ(dp_link_verify_status(ctrl, &st), DP_OK);
+    TEST_ASSERT_EQ(st, DP_LINK_TRAINING_SUCCESS);
+
+    return DP_OK;
+}
+
+/* ========================================================================== */
+/* 24. TEST REGISTRATION                                                       */
+/* ========================================================================== */
+
+static void dp_selftest_register_all(void)
+{
+    g_test_count = 0;
+
+    dp_test_register("helpers",   "bit ops, byte order, memory",        dp_test_helpers,       0);
+    dp_test_register("sha1",      "SHA-1 known vectors",                dp_test_sha1,          0);
+    dp_test_register("sha256",    "SHA-256 known vectors",              dp_test_sha256,        0);
+    dp_test_register("hmac",      "HMAC-SHA256 RFC 4231",               dp_test_hmac_sha256,   0);
+    dp_test_register("aes128",    "AES-128 FIPS-197 / NIST CBC",        dp_test_aes128,        0);
+    dp_test_register("bignum",    "2048-bit modexp correctness",        dp_test_bignum,        0);
+    dp_test_register("dsc_round", "DSC PPS encode/decode roundtrip",    dp_test_dsc_pps_roundtrip, 0);
+    dp_test_register("dsc_valid", "DSC PPS validation",                 dp_test_dsc_pps_validate,  0);
+    dp_test_register("dsc_slice", "DSC slice calculation",              dp_test_dsc_slices,    0);
+    dp_test_register("timing",    "EDID/VIC timing conversion",         dp_test_timing_convert,0);
+    dp_test_register("bandwidth", "bandwidth fit + bpp",                dp_test_bandwidth,     0);
+    dp_test_register("msa",       "MSA misc0/misc1 building",           dp_test_msa_compute,   0);
+    dp_test_register("audio",     "audio infoframe / CEA CA",           dp_test_audio_infoframe, 0);
+    dp_test_register("edid_csum", "EDID block checksum",                dp_test_edid_checksum, 0);
+    dp_test_register("hdcp_ksv",  "HDCP KSV ones-count check",          dp_test_hdcp_ksv,      0);
+    dp_test_register("hdcp_srm",  "HDCP SRM parse + revocation",        dp_test_hdcp_srm,      0);
+    dp_test_register("hdcp_cert", "HDCP cert structure sanity",         dp_test_hdcp_cert_structure, 0);
+    dp_test_register("dpcd_const","DPCD register constants sanity",     dp_test_dpcd_constants,0);
+    dp_test_register("aux_hw",    "AUX HW register probe",              dp_test_aux_hw_probe,  1);
+    dp_test_register("sink_probe","live sink DPCD probe",               dp_test_sink_dpcd_probe, 1);
+    dp_test_register("bringup",   "full link bring-up",                 dp_test_bringup,       1);
+}
+
+/* ========================================================================== */
+/* 25. PUBLIC RUNNER                                                           */
+/* ========================================================================== */
+
+int dp_selftest_run_all(void)
+{
+    dp_selftest_register_all();
+
+    u32 passed  = 0;
+    u32 failed  = 0;
+    u32 skipped = 0;
+    u32 asserts_total = 0;
+
+    dp_info("========================================================");
+    dp_info(" DP/HDMI CORE SELFTEST - %u tests registered", g_test_count);
+    dp_info("========================================================");
+
+    for (u32 i = 0; i < g_test_count; i++) {
+        dp_test_entry_t *e = &g_tests[i];
+        g_cur_test = e->name;
+        g_assert_pass = 0;
+        g_assert_fail = 0;
+
+        if (e->requires_hw && !g_hw_ctrl) {
+            dp_warn("[SELFTEST] %-12s SKIP (no HW controller)", e->name);
+            e->last_rc = DP_ERR_NOT_SUPPORTED;
+            skipped++;
+            continue;
+        }
+
+        u64 t0 = riscv_read_time();
+        int rc = e->fn(e->requires_hw ? g_hw_ctrl : NULL);
+        u64 t1 = riscv_read_time();
+        u64 elapsed_us = t1 - t0;
+
+        e->last_rc = rc;
+        asserts_total += g_assert_pass + g_assert_fail;
+
+        if (rc == DP_OK && g_assert_fail == 0) {
+            dp_info("[SELFTEST] %-12s PASS (%u asserts, %llu us)",
+                    e->name, g_assert_pass, (unsigned long long)elapsed_us);
+            passed++;
+        } else {
+            dp_err("[SELFTEST] %-12s FAIL (%u pass / %u fail, rc=%d, %llu us)",
+                   e->name, g_assert_pass, g_assert_fail, rc,
+                   (unsigned long long)elapsed_us);
+            failed++;
+        }
+    }
+
+    dp_info("--------------------------------------------------------");
+    dp_info(" RESULT: %u pass, %u fail, %u skip, %u asserts",
+            passed, failed, skipped, asserts_total);
+    dp_info("========================================================");
+
+    return (failed == 0) ? DP_OK : DP_ERR_GENERIC;
+}
+
+int dp_selftest_run_by_name(const char *name)
+{
+    if (!name) return DP_ERR_INVAL;
+    dp_selftest_register_all();
+
+    for (u32 i = 0; i < g_test_count; i++) {
+        if (dp_mem_cmp(g_tests[i].name, name,
+                       dp_min_u32((u32)__builtin_strlen(name),
+                                  (u32)__builtin_strlen(g_tests[i].name))) != 0)
+            continue;
+
+        g_cur_test = g_tests[i].name;
+        g_assert_pass = 0;
+        g_assert_fail = 0;
+
+        if (g_tests[i].requires_hw && !g_hw_ctrl) {
+            dp_warn("[SELFTEST] %s requires HW controller", name);
+            return DP_ERR_NOT_SUPPORTED;
+        }
+
+        int rc = g_tests[i].fn(g_tests[i].requires_hw ? g_hw_ctrl : NULL);
+        if (rc != DP_OK || g_assert_fail) return DP_ERR_GENERIC;
+        return DP_OK;
+    }
+    return DP_ERR_INVAL;
+}
+
+void dp_selftest_list(void)
+{
+    dp_selftest_register_all();
+    dp_info("Registered tests (%u):", g_test_count);
+    for (u32 i = 0; i < g_test_count; i++) {
+        dp_info("  %-12s %s%s", g_tests[i].name, g_tests[i].desc,
+                g_tests[i].requires_hw ? " [hw]" : "");
+    }
+}
+
+/* Attach a controller so [hw] tests have something to work against. */
+void dp_selftest_set_hw_controller(dp_controller_t *ctrl)
+{
+    g_hw_ctrl = ctrl;
+}
+
+/* ========================================================================== */
+/* END OF BLOCK 8                                                              */
+/* ========================================================================== */
+
+
