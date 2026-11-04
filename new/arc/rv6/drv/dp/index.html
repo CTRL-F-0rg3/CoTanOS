@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DP/HDMI Core Driver — Technical Documentation</title>
+<style>
+:root{
+  --bg:#0e1116; --bg2:#151b23; --bg3:#1c232c; --fg:#d7dee8; --fg-dim:#8894a5;
+  --accent:#4ea1ff; --accent2:#66c2a5; --warn:#f0b400; --err:#ff6b6b;
+  --border:#2a3340; --code:#0a0d12; --highlight:#1e2a38;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:80px}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font-family:var(--font);font-size:15px;line-height:1.65;
+}
+header.topbar{
+  position:sticky;top:0;z-index:100;
+  background:rgba(14,17,22,0.95);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--border);
+  padding:12px 32px;display:flex;align-items:center;gap:24px;
+}
+header.topbar h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.3px;color:var(--accent)}
+header.topbar .meta{color:var(--fg-dim);font-size:13px}
+header.topbar .badge{
+  margin-left:auto;display:flex;gap:8px;
+  font-size:11px;color:var(--fg-dim);
+}
+header.topbar .badge span{
+  background:var(--bg3);padding:3px 8px;border-radius:4px;border:1px solid var(--border);
+}
+main{display:grid;grid-template-columns:280px 1fr;max-width:1600px;margin:0 auto}
+nav.sidebar{
+  position:sticky;top:57px;height:calc(100vh - 57px);overflow-y:auto;
+  padding:24px 16px 24px 24px;border-right:1px solid var(--border);
+  background:var(--bg2);
+}
+nav.sidebar h3{
+  font-size:11px;text-transform:uppercase;letter-spacing:1.2px;
+  color:var(--fg-dim);margin:18px 0 8px;font-weight:600;
+}
+nav.sidebar a{
+  display:block;color:var(--fg);text-decoration:none;
+  padding:5px 10px;border-radius:4px;font-size:13px;
+  border-left:2px solid transparent;margin-bottom:1px;
+}
+nav.sidebar a:hover{background:var(--bg3);color:var(--accent);border-left-color:var(--accent)}
+nav.sidebar a.sub{padding-left:22px;font-size:12.5px;color:var(--fg-dim)}
+nav.sidebar a.sub:hover{color:var(--accent2)}
+article{padding:32px 56px 120px;max-width:1120px;min-width:0}
+h1.section{
+  font-size:32px;font-weight:700;margin:56px 0 16px;
+  padding-bottom:12px;border-bottom:2px solid var(--accent);
+  color:var(--accent);scroll-margin-top:80px;
+}
+h1.section:first-of-type{margin-top:8px}
+h2{font-size:22px;font-weight:600;margin:42px 0 14px;color:var(--fg);scroll-margin-top:80px;
+   padding-left:12px;border-left:3px solid var(--accent2)}
+h3{font-size:17px;font-weight:600;margin:28px 0 10px;color:var(--accent2);scroll-margin-top:80px}
+h4{font-size:14px;font-weight:600;margin:20px 0 8px;color:var(--fg);
+   text-transform:uppercase;letter-spacing:.6px}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 14px;padding-left:24px}
+li{margin-bottom:6px}
+code{
+  font-family:var(--mono);font-size:13px;
+  background:var(--code);color:#e0c090;
+  padding:1px 6px;border-radius:3px;border:1px solid var(--border);
+}
+pre{
+  background:var(--code);border:1px solid var(--border);
+  border-radius:6px;padding:16px 20px;overflow-x:auto;
+  font-family:var(--mono);font-size:12.5px;line-height:1.55;
+  margin:14px 0 20px;color:#c8d3e0;
+}
+pre code{background:none;border:none;padding:0;font-size:inherit;color:inherit}
+table{
+  width:100%;border-collapse:collapse;margin:14px 0 22px;font-size:13.5px;
+  background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden;
+}
+th{
+  background:var(--bg3);text-align:left;padding:10px 14px;
+  font-weight:600;color:var(--accent);border-bottom:2px solid var(--border);
+  font-size:12.5px;text-transform:uppercase;letter-spacing:.5px;
+}
+td{padding:9px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--highlight)}
+.callout{
+  padding:14px 18px;border-radius:6px;margin:16px 0;
+  border-left:4px solid var(--accent);background:var(--bg2);
+}
+.callout.warn{border-left-color:var(--warn)}
+.callout.err{border-left-color:var(--err)}
+.callout.ok{border-left-color:var(--accent2)}
+.callout strong{color:var(--accent)}
+.callout.warn strong{color:var(--warn)}
+.callout.err strong{color:var(--err)}
+.callout.ok strong{color:var(--accent2)}
+.kv{display:grid;grid-template-columns:180px 1fr;gap:6px 16px;margin:14px 0;font-size:13.5px}
+.kv dt{color:var(--fg-dim);font-weight:500}
+.kv dd{margin:0;font-family:var(--mono);font-size:12.5px}
+.tag{
+  display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;
+  background:var(--bg3);border:1px solid var(--border);
+  color:var(--fg-dim);margin-right:6px;font-family:var(--mono);
+}
+.tag.hw{color:var(--accent);border-color:var(--accent)}
+.tag.sw{color:var(--accent2);border-color:var(--accent2)}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0}
+a{color:var(--accent)}
+footer.doc{
+  margin-top:80px;padding-top:24px;border-top:1px solid var(--border);
+  color:var(--fg-dim);font-size:12.5px;text-align:center;
+}
+@media(max-width:1000px){
+  main{grid-template-columns:1fr}
+  nav.sidebar{display:none}
+  article{padding:24px 20px 80px}
+  header.topbar{padding:10px 16px}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>DP/HDMI Core Driver</h1>
+  <span class="meta">Technical Documentation · v1.0.0</span>
+  <div class="badge">
+    <span>CoTanOS</span>
+    <span>RISC-V</span>
+    <span>~8940 LOC</span>
+  </div>
+</header>
+
+<main>
+
+<nav class="sidebar">
+  <h3>Contents</h3>
+  <a href="#overview">1. Overview</a>
+  <a href="#arch">2. Architecture</a>
+  <a href="#requirements">3. Requirements</a>
+
+  <h3>Modules</h3>
+  <a href="#block1">4. Block 1 — Infra + AUX</a>
+  <a href="#block2">5. Block 2 — Link Training</a>
+  <a href="#block3">6. Block 3 — EDID / CEA-861</a>
+  <a href="#block4">7. Block 4 — VIC / MST / Streams</a>
+  <a href="#block5">8. Block 5 — Audio</a>
+  <a href="#block6">9. Block 6 — HDCP 1.x / 2.2</a>
+  <a href="#block7">10. Block 7 — DSC / PSR / ALPM</a>
+  <a href="#block8">11. Block 8 — Selftest</a>
+  <a href="#cpp">12. C++ Layer</a>
+
+  <h3>Reference</h3>
+  <a href="#api">13. API Reference</a>
+  <a href="#regmap">14. HW Register Map</a>
+  <a href="#dpcd">15. DPCD Map</a>
+  <a href="#build">16. Build / Integration</a>
+  <a href="#testing">17. Testing</a>
+  <a href="#limits">18. Limitations</a>
+  <a href="#appendix">19. Appendix</a>
+</nav>
+
+<article>
+
+<!-- ================================================================ -->
+<!-- 1. OVERVIEW                                                      -->
+<!-- ================================================================ -->
+<h1 class="section" id="overview">1. Overview</h1>
+
+<p>
+<strong>DP/HDMI Core Driver</strong> is a complete bare-metal driver supporting
+both DisplayPort 1.4a and HDMI 2.0, written in C11 (core) and C++17 (convenience layer),
+targeted at the <strong>CoTanOS</strong> operating system on RISC-V (RV32/RV64).
+</p>
+
+<p>
+The driver implements the full DisplayPort protocol stack — from low-level MMIO access,
+through the AUX channel, link training, EDID/CEA-861 parsing, audio/video stream handling,
+HDCP (versions 1.x and 2.2), Multi-Stream Transport (MST), Display Stream Compression (DSC),
+Panel Self Refresh (PSR) and Advanced Link Power Management (ALPM), all the way up to a
+regression-test harness.
+</p>
+
+<div class="callout ok">
+<strong>Design philosophy:</strong> The C core (blocks 1–8) does all the heavy lifting and
+assumes no operating system or libc. The C++ layer (<code>dp_controller.hpp</code>) is purely
+a convenience wrapper — it provides RAII, strong types, callbacks, and orchestration. It does
+not duplicate DP logic.
+</div>
+
+<h2>1.1. Key Features</h2>
+<ul>
+  <li><strong>Zero runtime dependencies</strong> — no <code>malloc</code>, no threads, no libc (only <code>&lt;stdint.h&gt;</code>, <code>&lt;stdbool.h&gt;</code>, <code>&lt;stddef.h&gt;</code>).</li>
+  <li><strong>Bare-metal MMIO</strong> — custom <code>readl</code>/<code>writel</code> with RISC-V <code>fence</code> barriers.</li>
+  <li><strong>Asynchronous HDCP state machine</strong> — non-blocking, driven from timer/HPD.</li>
+  <li><strong>Software cryptography</strong> — SHA-1, SHA-256, HMAC-SHA256, AES-128 (ECB/CBC), 2048-bit bignum (Montgomery CIOS).</li>
+  <li><strong>Full DPCD</strong> — every DP 1.4a register including MST, DSC, HDCP, PSR, ALPM.</li>
+  <li><strong>VIC table</strong> — full CEA-861 table with 45 entries (SD/HD/1080p/720p/UHD/4K DCI).</li>
+  <li><strong>Regression tests</strong> — 21 tests, covering SW-only (SHA/AES/bignum/DSC PPS) and HW (link training).</li>
+</ul>
+
+<h2>1.2. Statistics</h2>
+<table>
+<tr><th>Block</th><th>Scope</th><th>LOC (approx)</th><th>Type</th></tr>
+<tr><td>1</td><td>Infrastructure + AUX channel</td><td>~430</td><td>SW + MMIO</td></tr>
+<tr><td>2</td><td>Link training (CR + EQ)</td><td>~340</td><td>SW + DPCD</td></tr>
+<tr><td>3</td><td>EDID / CEA-861 / HDMI DDC</td><td>~690</td><td>SW + AUX/I2C</td></tr>
+<tr><td>4</td><td>VIC table + MST + Streams</td><td>~800</td><td>SW + DPCD + SB</td></tr>
+<tr><td>5</td><td>Audio (ALSA-like) + SDP</td><td>~750</td><td>SW + MMIO</td></tr>
+<tr><td>6</td><td>HDCP 1.x / 2.2 (full crypto stack)</td><td>~3020</td><td>SW + AUX + crypto</td></tr>
+<tr><td>7</td><td>DSC / PSR / ALPM</td><td>~810</td><td>SW + DPCD + MMIO</td></tr>
+<tr><td>8</td><td>Selftest harness</td><td>~740</td><td>SW + HW tests</td></tr>
+<tr><td>—</td><td><code>dp_core.h</code> (public API)</td><td>~700</td><td>Header only</td></tr>
+<tr><td>—</td><td><code>dp_controller.hpp</code> (C++)</td><td>~660</td><td>Header only</td></tr>
+<tr><td colspan="2"><strong>Total</strong></td><td><strong>~8940</strong></td><td></td></tr>
+</table>
+
+<!-- ================================================================ -->
+<!-- 2. ARCHITECTURE                                                  -->
+<!-- ================================================================ -->
+<h1 class="section" id="arch">2. Architecture</h1>
+
+<h2>2.1. Layers</h2>
+<pre>
+┌────────────────────────────────────────────────────────────────┐
+│  Application / display driver  (CoTanOS userland)              │
+└──────────────────────────────┬─────────────────────────────────┘
+                               │ uses
+┌──────────────────────────────▼─────────────────────────────────┐
+│  C++ layer  (dp_controller.hpp)                                │
+│  - Controller (RAII)      - StreamHandle (RAII)                │
+│  - Result&lt;T&gt;, Error enum  - EdidBlob, AudioCard                │
+│  - Callbacks: OnStateChange / OnHpd / OnIrq                    │
+│  - Orchestration: bring_up(), health_check(), retry()          │
+└──────────────────────────────┬─────────────────────────────────┘
+                               │ calls
+┌──────────────────────────────▼─────────────────────────────────┐
+│  Public C API  (dp_core.h)                                     │
+│  dp_aux_*, dp_link_*, dp_edid_*, dp_stream_*, dp_mst_*,        │
+│  dp_audio_*, dp_hdcp_*, dp_dsc_*, dp_psr_*, dp_alpm_*          │
+└──────────────────────────────┬─────────────────────────────────┘
+                               │ implementation
+┌──────────────────────────────▼─────────────────────────────────┐
+│  C core  (dp_core.c, blocks 1–8)                               │
+│  AUX SM │ LinkTraining │ EDID │ MST │ Audio │ HDCP │ DSC/PSR   │
+└──────────────────────────────┬─────────────────────────────────┘
+                               │ MMIO / AUX / I2C
+┌──────────────────────────────▼─────────────────────────────────┐
+│  Hardware: DP IP core  ←→  AUX CH  ←→  sink (monitor)          │
+│            HDMI IP core ←→ DDC/EDID ←→ sink (TV)               │
+└────────────────────────────────────────────────────────────────┘
+</pre>
+
+<h2>2.2. File Breakdown</h2>
+<table>
+<tr><th>File</th><th>Role</th><th>LOC</th></tr>
+<tr><td><code>include/dp_core.h</code></td><td>Public C API, all structs and constants</td><td>~700</td></tr>
+<tr><td><code>include/dp_controller.hpp</code></td><td>C++ layer (RAII, types, callbacks)</td><td>~660</td></tr>
+<tr><td><code>src/dp_core.c</code></td><td>Implementation of blocks 1–7 (single file)</td><td>~6840</td></tr>
+<tr><td><code>src/dp_selftest.c</code></td><td>Regression test harness (Block 8)</td><td>~740</td></tr>
+<tr><td><code>src/dp_controller.cpp</code></td><td>Thin glue (uses the C++ header)</td><td>—</td></tr>
+<tr><td><code>src/core_io.c</code></td><td>Existing low-level I/O</td><td>—</td></tr>
+</table>
+
+<h2>2.3. Dependencies</h2>
+<ul>
+  <li><code>&lt;stdint.h&gt;</code>, <code>&lt;stdbool.h&gt;</code>, <code>&lt;stddef.h&gt;</code> — the only system headers in C</li>
+  <li><code>&lt;cstdint&gt;</code>, <code>&lt;array&gt;</code>, <code>&lt;vector&gt;</code>, <code>&lt;optional&gt;</code>, <code>&lt;functional&gt;</code>, <code>&lt;string_view&gt;</code>, <code>&lt;atomic&gt;</code> — C++17 for the convenience layer</li>
+  <li>No dependency on Linux kernel, ACPI, PCI, DRM, or ALSA</li>
+</ul>
+
+<!-- ================================================================ -->
+<!-- 3. REQUIREMENTS                                                  -->
+<!-- ================================================================ -->
+<h1 class="section" id="requirements">3. Requirements</h1>
+
+<h2>3.1. Runtime Environment</h2>
+<dl class="kv">
+  <dt>Architecture</dt><dd>RISC-V RV32 / RV64 (tested: QEMU virt; real HW TBD)</dd>
+  <dt>Compiler</dt><dd>GCC &gt;= 9.0 or Clang &gt;= 10.0</dd>
+  <dt>Language standards</dt><dd>C11 (core), C++17 (convenience layer)</dd>
+  <dt>Endianness</dt><dd>Little-endian (MMIO matrix is LE)</dd>
+  <dt>OS</dt><dd>CoTanOS bare-metal (other bare-metal OSes possible)</dd>
+</dl>
+
+<h2>3.2. Hardware Requirements</h2>
+<ul>
+  <li>DP 1.4a IP core with a register map matching <code>dp_hardware_registers_t</code></li>
+  <li>AUX channel HW (<code>AUX_CH_CTL/ADDR/DATA</code> registers)</li>
+  <li>Optional HDMI 2.0 IP core (<code>HDMI_REG_*</code> registers)</li>
+  <li>Optional HDCP 1.x cipher (<code>HDCP1_REG_CIPHER_*</code> registers)</li>
+  <li>Optional DSC IP core (<code>DP_REG_DSC_*</code> registers)</li>
+  <li>Optional PSR/ALPM HW (<code>DP_REG_PSR_*</code>, <code>DP_REG_ALPM_*</code>)</li>
+</ul>
+
+<div class="callout warn">
+<strong>Note:</strong> Exact register addresses and field values depend on the specific IP core.
+Every offset in <code>dp_core.c</code> is defined as a <code>#define</code> — porting to another IP
+core only requires changing them. There are no vendor-specific dependencies.
+</div>
+
+<h2>3.3. Memory Requirements</h2>
+<table>
+<tr><th>Item</th><th>Static Size</th><th>Notes</th></tr>
+<tr><td><code>dp_controller_t</code></td><td>~64 B</td><td>One per controller</td></tr>
+<tr><td><code>dp_driver_state_t</code></td><td>~2.5 KB</td><td>Includes 64 stream slots</td></tr>
+<tr><td><code>dp_snd_card_t</code></td><td>~1.5 KB</td><td>Including ELD, SADs, controls</td></tr>
+<tr><td><code>hdcp_sm_t</code></td><td>~2 KB</td><td>State machine + cert + hashes</td></tr>
+<tr><td>DMA ring buffer</td><td>Caller-provided</td><td>Typical: 64 KB – 1 MB</td></tr>
+<tr><td>Call stack</td><td>&lt; 8 KB</td><td>Deepest: RSA + Montgomery</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<!-- 4. BLOCK 1                                                       -->
+<!-- ================================================================ -->
+<h1 class="section" id="block1">4. Block 1 — Infrastructure + AUX Channel</h1>
+
+<p>The driver foundation: type aliases, memory barriers, MMIO intrinsics, atomic operations,
+spinlocks, mutexes, semaphores, logging, and the complete AUX channel with DPCD and
+I2C-over-AUX transactions.</p>
+
+<h2>4.1. Base Types</h2>
+<pre><code>typedef uint8_t   u8;
+typedef uint16_t  u16;
+typedef uint32_t  u32;
+typedef uint64_t  u64;
+/* plus s8..s64, paddr_t, vaddr_t, dma_addr_t, dpcd_addr_t, dp_reg_t */</code></pre>
+
+<h2>4.2. Memory Barriers (RISC-V fence)</h2>
+<table>
+<tr><th>Macro</th><th>Instruction</th><th>Meaning</th></tr>
+<tr><td><code>riscv_mb()</code></td><td><code>fence iorw, iorw</code></td><td>Full barrier (I/O + RW)</td></tr>
+<tr><td><code>riscv_rmb()</code></td><td><code>fence ir, ir</code></td><td>Read-only barrier</td></tr>
+<tr><td><code>riscv_wmb()</code></td><td><code>fence ow, ow</code></td><td>Write-only barrier</td></tr>
+<tr><td><code>riscv_smp_mb()</code></td><td><code>fence rw, rw</code></td><td>SMP barrier (no MMIO)</td></tr>
+</table>
+
+<h2>4.3. MMIO Intrinsics</h2>
+<pre><code>static inline void __raw_writeb(u8 val, volatile void __iomem *addr)
+{
+    __asm__ __volatile__ ("sb %0, 0(%1)" : : "r" (val), "r" (addr) : "memory");
+}
+/* writew (sh), writel (sw), writeq (sd), readb (lb), readw (lh), readl (lw), readq (ld) */</code></pre>
+
+<p>Synchronized variants: <code>readb/w/l/q()</code>, <code>writeb/w/l/q()</code> — with <code>__io_*()</code> barriers.
+Relaxed variants: <code>_relaxed</code> — no barriers. Aliases: <code>ioread*</code>/<code>iowrite*</code>.</p>
+
+<h2>4.4. AUX Transactions</h2>
+
+<p>The AUX channel carries a 20-bit address, max 16 B payload, with native commands
+(0x08/0x09) and I2C commands (0x00–0x05). The dispatcher <code>dp_aux_transaction()</code> handles:</p>
+
+<table>
+<tr><th>Status</th><th>Dispatcher Action</th></tr>
+<tr><td><code>DP_AUX_TRANSACTION_COMPLETE</code></td><td>Returns <code>DP_OK</code></td></tr>
+<tr><td><code>DP_AUX_TRANSACTION_DEFERRED</code></td><td>Exponential backoff 100 µs → 8 ms, retry up to 7×</td></tr>
+<tr><td><code>DP_AUX_TRANSACTION_NACK</code></td><td>Short retry 100 µs, retry up to 7×</td></tr>
+<tr><td><code>DP_AUX_TRANSACTION_TIMEOUT</code></td><td>Short retry 100 µs, retry up to 7×</td></tr>
+<tr><td><code>DP_AUX_TRANSACTION_FAILED</code></td><td>Immediate failure (HW error)</td></tr>
+</table>
+
+<h3>4.4.1. DPCD Wrappers</h3>
+<pre><code>int dp_aux_read_dpcd (dp_controller_t *c, u32 addr, u8 *buf, u32 len);
+int dp_aux_write_dpcd(dp_controller_t *c, u32 addr, const u8 *buf, u32 len);</code></pre>
+<p>Split long transfers into 16 B chunks (read reply) / 16 B (write payload).</p>
+
+<h3>4.4.2. I2C-over-AUX</h3>
+<pre><code>int dp_aux_i2c_read (dp_controller_t *c, u8 i2c_addr, u32 offset, u8 *buf, u32 len);
+int dp_aux_i2c_write(dp_controller_t *c, u8 i2c_addr, u32 offset, const u8 *buf, u32 len);</code></pre>
+<ul>
+  <li>1-byte offset for ≤0xFF (typical EDID), 2-byte (high-first) for larger</li>
+  <li>MOT (Middle-of-Transaction) set in the offset write, then in every non-final chunk</li>
+  <li>7-bit slave addresses: 0x50 = EDID, 0x3A = HDCP</li>
+</ul>
+
+<h2>4.5. Spinlocks, Mutexes, Semaphores</h2>
+<p>Built on <code>amoadd.w.aqrl</code> / <code>lr.w.aqrl</code> / <code>sc.w.aqrl</code>:</p>
+<ul>
+  <li><code>dp_spinlock_t</code> — test-and-set with <code>cpu_pause()</code> in the loop</li>
+  <li><code>dp_mutex_t</code> — binary semaphore with a counter</li>
+  <li><code>dp_semaphore_t</code> — counter + waiters</li>
+</ul>
+
+<!-- ================================================================ -->
+<!-- 5. BLOCK 2                                                       -->
+<!-- ================================================================ -->
+<h1 class="section" id="block2">5. Block 2 — Link Training</h1>
+
+<p>The standard DP link training procedure: Clock Recovery (CR, TP1) → Channel Equalization
+(EQ, TP2 or TP3).</p>
+
+<h2>5.1. CR Sequence</h2>
+<ol>
+  <li>Read <code>DP_MAX_LINK_RATE</code> and <code>DP_MAX_LANE_COUNT</code> from the sink DPCD</li>
+  <li>Write <code>DP_LINK_BW_SET</code> and <code>DP_LANE_COUNT_SET</code> (plus Enhanced Frame if supported)</li>
+  <li>Write <code>DP_TRAINING_PATTERN_SET</code> = 0x01 (TP1)</li>
+  <li>Write VS/PE for each lane (start: VS=0, PE=0)</li>
+  <li>Loop (max 10 iterations):
+    <ul>
+      <li>Read <code>DP_LANE0_1_STATUS</code> + <code>DP_LANE2_3_STATUS</code></li>
+      <li>Check CR_DONE for all active lanes</li>
+      <li>Read <code>DP_ADJUST_REQUEST</code> (lane01 + lane23)</li>
+      <li>Apply new VS/PE (clamped to rate-dependent max PE)</li>
+    </ul>
+  </li>
+</ol>
+
+<h2>5.2. EQ Sequence</h2>
+<p>Same as CR, but TP2 (RBR/HBR/HBR2) or TP3 (HBR3), max 10 iterations, checking
+EQ_DONE + SYMBOL_LOCKED plus <code>INTERLANE_ALIGN_DONE</code>.</p>
+
+<h2>5.3. Rate-dependent PE limits</h2>
+<table>
+<tr><th>Rate</th><th>Max VS</th><th>Max PE</th></tr>
+<tr><td>RBR (1.62 Gbps)</td><td>3</td><td>0</td></tr>
+<tr><td>HBR (2.70 Gbps)</td><td>3</td><td>1</td></tr>
+<tr><td>HBR2 (5.40 Gbps)</td><td>3</td><td>3</td></tr>
+<tr><td>HBR3 (8.10 Gbps)</td><td>3</td><td>3</td></tr>
+</table>
+
+<h2>5.4. API</h2>
+<pre><code>int dp_link_read_caps (dp_controller_t *c, dp_link_caps_t *caps);
+int dp_link_set_rate  (dp_controller_t *c, dp_link_bandwidth_t bw, dp_lane_count_t lanes);
+int dp_link_train_cr  (dp_controller_t *c);
+int dp_link_train_eq  (dp_controller_t *c);
+int dp_link_verify_status(dp_controller_t *c, dp_link_training_state_t *st);
+int dp_link_train     (dp_controller_t *c);  /* full sequence */</code></pre>
+
+<!-- ================================================================ -->
+<!-- 6. BLOCK 3                                                       -->
+<!-- ================================================================ -->
+<h1 class="section" id="block3">6. Block 3 — EDID / CEA-861 / HDMI DDC</h1>
+
+<p>EDID read and parse (base block 128 B + extensions), CEA-861, HDMI VSDB, ELD.</p>
+
+<h2>6.1. EDID Read</h2>
+<p><strong>Over DP:</strong> <code>dp_edid_read()</code> reads the base block 128 B via I2C-over-AUX at
+address 0x50. Then (if <code>ext_block_count &gt; 0</code>) it reads blocks 1–2 looking for CEA-861
+(tag 0x02).</p>
+<p><strong>Over HDMI:</strong> <code>hdmi_edid_read()</code> uses DDC (3-register CTL/ADDR/DATA model),
+max 8 blocks = 1024 B.</p>
+
+<h2>6.2. Base Block Parsing</h2>
+<p><code>dp_edid_parse()</code> returns an array of <code>edid_timing_t</code> composed of:</p>
+<ul>
+  <li><strong>Established timings</strong> — 11 entries from a table (640×480@60 → 1280×1024@75)</li>
+  <li><strong>Standard timings</strong> — 8 entries (aspect ratio + refresh → hactive/vactive)</li>
+  <li><strong>Detailed timing descriptors (DTD)</strong> — 4 entries with full pixel clock and blanking</li>
+</ul>
+
+<h2>6.3. CEA-861 Parser</h2>
+<p><code>cea861_parse_data_blocks()</code> iterates over all Data Blocks:</p>
+<table>
+<tr><th>Tag</th><th>Type</th><th>What is parsed</th></tr>
+<tr><td>0x01</td><td>Audio</td><td>Short Audio Descriptors (SAD)</td></tr>
+<tr><td>0x02</td><td>Video</td><td>VIC (CEA-861 Video Identification Codes)</td></tr>
+<tr><td>0x03</td><td>Vendor</td><td>HDMI VSDB (OUI, physical address, deep color, max TMDS, HDMI VIC)</td></tr>
+<tr><td>0x04</td><td>Speaker</td><td>Speaker allocation</td></tr>
+</table>
+
+<h2>6.4. ELD (EDID Like Data)</h2>
+<p><code>dp_edid_fill_eld_cea()</code> produces a HDA-compatible ELD structure used by audio
+to build PCM constraints. The ELD contains:</p>
+<ul>
+  <li>EDID version + baseline length</li>
+  <li>Speaker allocation (3 B)</li>
+  <li>SAD array (15 × 3 B)</li>
+  <li>HDMI VSDB (presence, length, flags, CEC address)</li>
+</ul>
+
+<!-- ================================================================ -->
+<!-- 7. BLOCK 4                                                       -->
+<!-- ================================================================ -->
+<h1 class="section" id="block4">7. Block 4 — VIC / MST / Streams</h1>
+
+<h2>7.1. Full CEA-861 VIC Table</h2>
+<p>45 entries with complete timings (hactive, vactive, htotal, vtotal, porches, sync,
+pclk_khz, aspect, interlace):</p>
+<table>
+<tr><th>Group</th><th>VIC</th><th>Description</th></tr>
+<tr><td>SD 480i/p</td><td>1–9</td><td>640×480@60, 720×480@60 (p/i, 4:3/16:9), 1440×480</td></tr>
+<tr><td>HD 1080i</td><td>5, 20</td><td>1920×1080@60/50 interlaced</td></tr>
+<tr><td>HD 720p</td><td>4, 19, 41–43, 60–62</td><td>1280×720@24/25/30/50/60</td></tr>
+<tr><td>HD 1080p</td><td>16, 31–34</td><td>1920×1080@24/25/30/50/60</td></tr>
+<tr><td>1080p high-rate</td><td>63, 64</td><td>1920×1080@100/120</td></tr>
+<tr><td>UHD 4K</td><td>93–97, 103–104</td><td>3840×2160@24/25/30/50/60/100/120</td></tr>
+<tr><td>DCI 4K</td><td>98–102, 105–106</td><td>4096×2160@24/25/30/50/60/100/120</td></tr>
+</table>
+
+<h2>7.2. Timing Conversions</h2>
+<pre><code>int dp_timing_from_vic(u8 vic, dp_timing_spec_t *out);
+int dp_timing_from_edid_dtd(const edid_detailed_timing_t *dtd, dp_timing_spec_t *out);
+int dp_timing_from_edid_timing(const edid_timing_t *et, dp_timing_spec_t *out);</code></pre>
+
+<h2>7.3. Stream Management</h2>
+<p>Two API variants:</p>
+<ul>
+  <li><strong>Single-mode:</strong> <code>dp_stream_set_timing()</code> + <code>dp_stream_enable()</code> + <code>dp_stream_disable()</code></li>
+  <li><strong>Multi-mode (MST):</strong> <code>dp_stream_set_timing_ex()</code> + <code>dp_stream_enable_ex()</code> + <code>dp_stream_disable_ex()</code></li>
+</ul>
+<p>The <code>_ex</code> variant operates on <code>dp_driver_state_t</code> and tracks
+<code>vc_payload_id</code>, required for MST.</p>
+
+<h2>7.4. MSA Register Building</h2>
+<p><code>dp_msa_compute()</code> + <code>dp_msa_write_hw()</code> translate <code>dp_timing_spec_t</code> into:</p>
+<ul>
+  <li><code>MSA_MISC0</code> — color format, sync clock, frame start</li>
+  <li><code>MSA_MISC1</code> — BPC, dynamic range, YUV420 VBLANK</li>
+  <li><code>HORIZONTAL_TOTAL/START/ACTIVE/BLANKING</code></li>
+  <li><code>VERTICAL_TOTAL/START/ACTIVE/BLANKING</code></li>
+  <li><code>PIXEL_CLOCK_RATE</code> (kHz)</li>
+</ul>
+<p>For interlaced modes all vertical fields are divided by 2 (per-field registers).</p>
+
+<h2>7.5. MST (Multi-Stream Transport)</h2>
+<p>Complete sideband messaging:</p>
+<ul>
+  <li><strong>Wire format:</strong> <code>[link_hi][link_lo][msg_type][data ≤48B]</code> (max 51 B, fits in 64 B FIFO)</li>
+  <li><strong>HW registers:</strong> <code>MST_SB_TX/RX</code>, <code>MST_CTL</code>, <code>MST_STATUS</code>, <code>VC_PAYLOAD_STAT</code> (offsets 0x0A0–0x13F)</li>
+  <li><strong>VCPI/PBN:</strong> PBN ≈ pixel_clock × bpp, saturates at 0xFFFF, clipped to 63 slots</li>
+</ul>
+
+<h3>7.5.1. Sideband Messages</h3>
+<table>
+<tr><th>ID</th><th>Name</th><th>Direction</th></tr>
+<tr><td>0x00</td><td>LINK_ADDRESS</td><td>TX/RX</td></tr>
+<tr><td>0x01</td><td>CONNECTION_STATUS</td><td>RX (upstream notify)</td></tr>
+<tr><td>0x02</td><td>RESOURCE_STATUS</td><td>RX (upstream notify)</td></tr>
+<tr><td>0x10</td><td>ENUM_PATH_RESOURCES</td><td>TX</td></tr>
+<tr><td>0x20</td><td>ALLOCATE_PAYLOAD</td><td>TX</td></tr>
+<tr><td>0x30</td><td>ENUM_PATH_RESOURCES_REPLY</td><td>RX</td></tr>
+<tr><td>0x40</td><td>QUERY_PAYLOAD</td><td>TX</td></tr>
+<tr><td>0x50</td><td>CLEAR_PAYLOAD_ID</td><td>TX</td></tr>
+</table>
+
+<h3>7.5.2. Topology and Allocation</h3>
+<pre><code>int dp_mst_discover_topology(dp_controller_t *c,
+                             dp_mst_link_address_payload_t *out, u32 max_ports);
+int dp_mst_enum_path_resources(dp_controller_t *c, u8 port_number, u32 *avail_pbn);
+int dp_mst_alloc_and_assign(dp_driver_state_t *ds, u8 stream_id,
+                            u8 port_number, u8 vcpi);
+int dp_mst_teardown_port(dp_driver_state_t *ds, u8 port_number);</code></pre>
+
+<!-- ================================================================ -->
+<!-- 8. BLOCK 5                                                       -->
+<!-- ================================================================ -->
+<h1 class="section" id="block5">8. Block 5 — Audio (ALSA-like)</h1>
+
+<p>Audio layer modeled after ALSA, but without kernel dependencies. Contains:</p>
+<ul>
+  <li><code>dp_snd_card_t</code> — card with PCM, controls, ELD, SAD</li>
+  <li><code>dp_pcm_substream_t</code> — ring buffer, hw_ptr, appl_ptr, period callback</li>
+  <li><code>dp_pcm_hardware_t</code> — constraints (format/rate/channels/period/buffer)</li>
+  <li><code>dp_pcm_hw_params_t</code> — parameters like <code>snd_pcm_hw_params</code></li>
+  <li><code>dp_snd_kcontrol_t</code> — simple controls (volume, switch, IEC958)</li>
+</ul>
+
+<h2>8.1. Structures</h2>
+<pre><code>typedef struct dp_snd_card_s {
+    char id[16];
+    char name[32];
+    dp_snd_pcm_t pcm;
+    dp_snd_kcontrol_t controls[DP_MAX_CONTROLS];
+    u32 num_controls;
+    dp_controller_t *ctrl;
+    dp_eld_t eld;
+    dp_sad_t sads[DP_ELD_MAX_SAD];
+    u32 sad_count;
+    u32 cea_ca;
+    u32 speaker_mask;
+    bool eld_valid;
+    bool audio_enabled;
+    dp_spinlock_t lock;
+} dp_snd_card_t;</code></pre>
+
+<h2>8.2. ELD and Constraints</h2>
+<p><code>dp_eld_parse()</code> parses the ELD from DPCD (version, baseline, SAD count, speaker
+allocation, SAD array). <code>dp_pcm_build_constraints_from_eld()</code> computes:</p>
+<ul>
+  <li><code>format_mask</code> — S16/S24/S32 LE (based on max BPC in SAD)</li>
+  <li><code>rate_min/max</code> — 32 000 – 192 000 Hz</li>
+  <li><code>channels_min/max</code> — 2 up to max from SAD</li>
+  <li><code>period_bytes_min/max</code>, <code>periods_min/max</code>, <code>buffer_bytes_max</code></li>
+</ul>
+
+<h2>8.3. CEA Channel Allocation</h2>
+<p>Table of 22 entries mapping CEA CA index → speaker layout (FL/FR/FC/LFE/RL/RR/…).
+CA selection: <code>dp_cea_select_ca(spk_mask, channels)</code> prefers exact match,
+falls back to a CA with the same channel count, then to stereo.</p>
+
+<h2>8.4. Audio InfoFrame</h2>
+<p><code>dp_audio_build_infoframe()</code> builds a DP Audio InfoFrame packet (0x84/0x1b/0x11&lt;&lt;2), with fields:</p>
+<ul>
+  <li>CC02_CT47 — channel count - 1 (bits 2:0), coding type (bits 6:4)</li>
+  <li>SS01_SF24 — sample size, sample frequency</li>
+  <li>CA — CEA channel allocation index</li>
+</ul>
+<p><code>dp_audio_pack_sdp_infoframe()</code> packs into SDP header + 2 × u32 payload.</p>
+
+<h2>8.5. HDMI Audio InfoFrame</h2>
+<p><code>hdmi_audio_infoframe_pack()</code> builds the standard 12-byte packet with checksum and
+sends it through <code>HDMI_REG_INFOFRAME_CTL/DATA</code> registers.</p>
+
+<h2>8.6. PCM Lifecycle</h2>
+<pre><code>1. dp_snd_card_init(&card, ctrl, "DP-HDMI-Audio");
+2. dp_snd_card_set_eld(&card, eld, eld_len);        // optional
+3. dp_snd_card_add_default_controls(&card);
+4. dp_snd_pcm_prepare(&card, dma_area, dma_bytes);
+5. dp_snd_pcm_apply_hw_params(&card, &p);
+6. dp_snd_pcm_start(&card);                        // sends info frames
+7. dp_snd_pcm_period_elapsed(&card);               // per period
+8. dp_snd_pcm_stop(&card);</code></pre>
+
+<!-- ================================================================ -->
+<!-- 9. BLOCK 6                                                       -->
+<!-- ================================================================ -->
+<h1 class="section" id="block6">9. Block 6 — HDCP 1.x / 2.2</h1>
+
+<div class="callout warn">
+<strong>Largest block (~3020 LOC).</strong> Contains the complete software cryptographic
+stack required by HDCP: SHA-1, SHA-256, HMAC-SHA256, AES-128 (ECB/CBC), 2048-bit bignum
+(Montgomery CIOS), RSA-2048 public op.
+</div>
+
+<h2>9.1. Crypto Primitives</h2>
+<table>
+<tr><th>Algorithm</th><th>Use in HDCP</th></tr>
+<tr><td>SHA-1</td><td>HDCP 1.x — V computation</td></tr>
+<tr><td>SHA-256</td><td>HDCP 2.2 — certificate hashing, KDF</td></tr>
+<tr><td>HMAC-SHA256</td><td>HDCP 2.2 — kd, k_priv, k_pub, H', L'</td></tr>
+<tr><td>AES-128 ECB</td><td>HDCP 2.2 — e_km, e_kh_km</td></tr>
+<tr><td>AES-128 CBC</td><td>HDCP 2.2 — edkey_ks</td></tr>
+<tr><td>RSA-2048</td><td>HDCP 2.2 — cert verify (DCP root), kPub_km</td></tr>
+<tr><td>Montgomery CIOS</td><td>RSA-2048 modexp</td></tr>
+</table>
+
+<h2>9.2. HDCP 1.x — Full Flow</h2>
+<ol>
+  <li>Read Bksv (5 B), validate (20 ones)</li>
+  <li>SRM check (if loaded)</li>
+  <li>Generate AKSV (20 ones), write An + AKSV + AINFO</li>
+  <li>Compute Km = cipher(AKSV, An) — HW cipher</li>
+  <li>Read An' (RX changed it), compute R0 = cipher(An', Km)</li>
+  <li>Write R0, read Ri</li>
+  <li>If repeater: read BStatus + KSV FIFO, compute V = SHA-1(KSV || Bksv || M0), compare with V'</li>
+</ol>
+
+<h2>9.3. HDCP 2.2 — Full Flow</h2>
+<p>Complete AKE + LC + SKE sequence:</p>
+<table>
+<tr><th>Phase</th><th>Messages</th><th>Crypto</th></tr>
+<tr><td>AKE_Init</td><td>TX → RX (rtx, tx_caps)</td><td>—</td></tr>
+<tr><td>AKE_Send_Cert</td><td>RX → TX (522 B cert)</td><td>RSA verify (DCP root, SHA-256 digest)</td></tr>
+<tr><td>AKE_No_Stored_km</td><td>TX → RX (kPub_km, e_km)</td><td>RSA encrypt (RX pubkey), AES-ECB (kd=HMAC(km,0,0))</td></tr>
+<tr><td>AKE_Send_H_prime</td><td>RX → TX (H')</td><td>HMAC(kd||k_priv, SHA256(cert))</td></tr>
+<tr><td>AKE_Send_Pairing_Info</td><td>RX → TX (e_kh_km)</td><td>AES-ECB(kd, km)</td></tr>
+<tr><td>LC_Init</td><td>TX → RX (rn)</td><td>—</td></tr>
+<tr><td>LC_Send_L_prime</td><td>RX → TX (L')</td><td>HMAC(kd||k_priv, rn)</td></tr>
+<tr><td>SKE_Send_Eks</td><td>TX → RX (edkey_ks, rrx)</td><td>ks = riv⊕kd, AES-CBC(dkey2, iv=riv, ks)</td></tr>
+</table>
+
+<h2>9.4. Async State Machine</h2>
+<p><code>hdcp_sm_t</code> with 10 states; <code>hdcp_sm_tick()</code> is non-blocking (except for a
+single message with 200 ms timeout).</p>
+<pre><code>typedef enum {
+    HSTATE_IDLE = 0,
+    HSTATE_1X_AUTH,        HSTATE_1X_WAIT_REPEATER,   HSTATE_1X_STREAMING,
+    HSTATE_2X_AKE,         HSTATE_2X_LC,              HSTATE_2X_SKE,
+    HSTATE_2X_REPEATER,    HSTATE_2X_STREAMING,
+    HSTATE_FAILED,
+} hdcp_state_t;</code></pre>
+
+<h2>9.5. SRM (System Renewability Message)</h2>
+<pre><code>int  hdcp_srm_parse(const u8 *srm, u32 srm_len, hdcp_srm_t *out);
+bool hdcp_srm_revoked(const hdcp_srm_t *srm, const u8 ksv[5]);
+int  dp_hdcp_load_srm(const u8 *srm, u32 srm_len);</code></pre>
+
+<h2>9.6. Streaming Tick</h2>
+<p><strong>HDCP 1.x:</strong> <code>hdcp1_streaming_tick()</code> — Ri update every frame (reauth check every 128 frames).</p>
+<p><strong>HDCP 2.2:</strong> <code>hdcp22_streaming_tick()</code> — RXSTATUS check every 256 frames (REAUTH, LINK_INTEGRITY_FAIL).</p>
+
+<!-- ================================================================ -->
+<!-- 10. BLOCK 7                                                      -->
+<!-- ================================================================ -->
+<h1 class="section" id="block7">10. Block 7 — DSC / PSR / ALPM</h1>
+
+<h2>10.1. DSC (Display Stream Compression)</h2>
+
+<h3>10.1.1. PPS Encode/Decode</h3>
+<p>Complete implementation of <code>dp_dsc_pps_encode()</code> (87 bytes + reserved zero to 128)
+and <code>dp_dsc_pps_decode()</code>. All VESA DSC 1.2a fields:</p>
+<ul>
+  <li>dsc_version_major/minor, bits_per_component, linebuf_depth, block_pred_enable</li>
+  <li>bits_per_pixel (fixed-point ×16), pic_width/height, slice_width/height, chunk_size</li>
+  <li>initial_xmit_delay, initial_dec_delay, initial_scale_value, scale_increment/decrement_interval</li>
+  <li>first_line_bpg_offset, nfl_bpg_offset, slice_bpg_offset, initial_offset, final_offset</li>
+  <li>flatness_min_qp, flatness_max_qp, rc_model_size, rc_edge_factor, rc_quant_incr_limit0/1</li>
+  <li>rc_tgt_offset_lo/hi, rc_buf_thresh[14], rc_range_params[15][2]</li>
+</ul>
+
+<h3>10.1.2. PPS Compute</h3>
+<p><code>dp_dsc_compute_pps()</code> — automatic PPS calculation from timing
+(pic_width/height, bpp, bpc):</p>
+<ul>
+  <li>All VESA baseline fields (8bpc/8bpp)</li>
+  <li>Tables <code>dsc_default_rc_buf_thresh[14]</code> and <code>dsc_default_rc_range_params[15][3]</code></li>
+</ul>
+
+<h3>10.1.3. Slice Calculation</h3>
+<p><code>dp_dsc_calc_slices()</code> selects:</p>
+<ul>
+  <li><code>slices_per_line</code> — smallest power-of-two divisor satisfying max_slice_width</li>
+  <li><code>slices_per_column</code> — prefers full height, falls back to 2×</li>
+  <li>Total ≤32, per VESA DSC</li>
+</ul>
+
+<h3>10.1.4. HW Programming</h3>
+<table>
+<tr><th>Register</th><th>Offset</th><th>Content</th></tr>
+<tr><td><code>DP_REG_DSC_CTL</code></td><td>0x300</td><td>EN, PPS_VALID, NATIVE_*, BLOCK_PRED</td></tr>
+<tr><td><code>DP_REG_DSC_STATUS</code></td><td>0x304</td><td>BUSY, PPS_LOADED, SLICE_DONE, FRAME_DONE, RC_BUF_OF</td></tr>
+<tr><td><code>DP_REG_DSC_PPS_WINDOW</code></td><td>0x32C</td><td>8 × u32 (32 B window, auto-advance)</td></tr>
+<tr><td><code>DP_REG_DSC_PPS_IDX</code></td><td>0x308</td><td>Write window index</td></tr>
+<tr><td><code>DP_REG_DSC_SLICE_CTL</code></td><td>0x310</td><td>slices_per_line, slice_width, slices_per_column-1</td></tr>
+<tr><td><code>DP_REG_DSC_OP_MODE</code></td><td>0x318</td><td>444/422/420</td></tr>
+</table>
+
+<h3>10.1.5. API</h3>
+<pre><code>int dp_dsc_pps_encode (const dp_dsc_pps_t *pps, u8 out[128]);
+int dp_dsc_pps_decode (const u8 in[128], dp_dsc_pps_t *pps);
+int dp_dsc_compute_pps(dp_dsc_pps_t *pps, u32 pic_w, u32 pic_h,
+                        u16 bpp_fixed16, u8 bpc,
+                        u32 slice_w, u32 slice_h, u8 native_mode);
+int dp_dsc_calc_slices(u32 pic_w, u32 pic_h,
+                        u32 max_slice_w, u32 max_slice_h,
+                        dp_link_bandwidth_t bw, dp_lane_count_t lanes,
+                        dp_dsc_slice_result_t *out);
+int dp_dsc_configure  (dp_controller_t *c, const dp_dsc_pps_t *pps);
+int dp_dsc_enable     (dp_controller_t *c);
+int dp_dsc_disable    (dp_controller_t *c);
+int dp_dsc_auto_enable(dp_controller_t *c, u32 pic_w, u32 pic_h,
+                        u16 bpp_fixed16, u8 bpc, u8 native_mode);</code></pre>
+
+<h2>10.2. PSR (Panel Self Refresh)</h2>
+<p><code>dp_psr_enable()</code> reads <code>DP_PSR_SUPPORT</code> + <code>DP_PSR_CAPS</code> from DPCD,
+computes setup time (bit 3:1 → 330 µs…0 µs table), programs HW timers:</p>
+<ul>
+  <li><code>DP_REG_PSR_TIMER_IDLE</code> (0x348) = setup + 20 ms</li>
+  <li><code>DP_REG_PSR_TIMER_WAKEUP</code> (0x34C) = 2 ms</li>
+  <li><code>DP_REG_PSR_CTL</code> (0x340) = EN | IRQ_EN | AUTO_EXIT</li>
+</ul>
+
+<p>Polling: <code>dp_psr_poll()</code> returns 0=idle, 1=active, 2=exiting, -1=error.
+<code>dp_psr_frame_committed()</code> is called before a new frame and forces exit.</p>
+
+<h2>10.3. ALPM (Advanced Link Power Management)</h2>
+<p>Full implementation with AUX-less wakeup:</p>
+<ul>
+  <li>DPCD: <code>ALPM_CAP</code> (bit 7 at 0x00E), <code>ALPM_CTRL</code> (0x221), <code>ALPM_STATUS</code> (0x222)</li>
+  <li>HW: <code>DP_REG_ALPM_CTL</code> (0x360), <code>STATUS</code> (0x364), <code>TIMER_IDLE/WAKEUP</code> (0x368/0x36C), <code>WAKEUP_CFG</code> (0x374), <code>IRQ_*</code> (0x378/0x37C)</li>
+</ul>
+
+<pre><code>int dp_alpm_configure(dp_controller_t *c, u32 cfg);
+/* cfg: bit0=enable, bit1=AUX-less, bit2=lock-error HPD,
+ *      bits 8..15=idle timer (ms), bits 16..23=wake timer (ms) */
+
+int dp_alpm_poll (dp_controller_t *c);
+int dp_alpm_wake (dp_controller_t *c);</code></pre>
+
+<h2>10.4. PM (Power Management) Driver</h2>
+<p>Stateful helper managing DSC/PSR/ALPM together:</p>
+<pre><code>int dp_pm_activity    (dp_controller_t *c);   // reset timer + wake
+int dp_pm_idle_tick   (dp_controller_t *c);   // poll PSR+ALPM, deactivate on error
+int dp_pm_enable_all  (dp_controller_t *c, bool dsc, bool psr, bool alpm, u32 alpm_cfg);
+int dp_pm_disable_all (dp_controller_t *c);</code></pre>
+
+<!-- ================================================================ -->
+<!-- 11. BLOCK 8                                                      -->
+<!-- ================================================================ -->
+<h1 class="section" id="block8">11. Block 8 — Selftest Harness</h1>
+
+<p>Regression test framework (21 tests), zero dependency on external frameworks.</p>
+
+<h2>11.1. Framework</h2>
+<pre><code>typedef int (*dp_test_fn_t)(dp_controller_t *ctrl);
+
+typedef struct {
+    const char *name;
+    const char *desc;
+    dp_test_fn_t fn;
+    int requires_hw;      // 1 = skip if !ctrl
+    int last_rc;
+} dp_test_entry_t;</code></pre>
+
+<h2>11.2. Assertions</h2>
+<ul>
+  <li><code>TEST_ASSERT(cond)</code> — basic</li>
+  <li><code>TEST_ASSERT_EQ(a, b)</code> — comparison with both values printed</li>
+  <li><code>TEST_ASSERT_MEM(a, b, n)</code> — memory comparison</li>
+</ul>
+<p>Each failure logs file + line + expression text.</p>
+
+<h2>11.3. SW Tests (18)</h2>
+<table>
+<tr><th>Test</th><th>Checks</th></tr>
+<tr><td>helpers</td><td>popcount, clz, bswap, align, mem ops, bitfields</td></tr>
+<tr><td>sha1</td><td>"abc" + chunked + multi-block</td></tr>
+<tr><td>sha256</td><td>"abc" + empty + chunked</td></tr>
+<tr><td>hmac</td><td>RFC 4231 Test Case 1</td></tr>
+<tr><td>aes128</td><td>FIPS-197 ECB + NIST CBC + round-trip</td></tr>
+<tr><td>bignum</td><td>4^13 mod 497 = 445, 2^10 mod 1000 = 24</td></tr>
+<tr><td>dsc_round</td><td>PPS encode→decode round-trip</td></tr>
+<tr><td>dsc_valid</td><td>PPS validation reject (bad version, dims, bpp)</td></tr>
+<tr><td>dsc_slice</td><td>slice calc for 1920/3840/7680 wide</td></tr>
+<tr><td>timing</td><td>EDID→Timing, VIC 16/97 lookup</td></tr>
+<tr><td>bandwidth</td><td>bw fit, lowest BW, bpp calc</td></tr>
+<tr><td>msa</td><td>misc0/misc1 packing</td></tr>
+<tr><td>audio</td><td>Audio InfoFrame, CEA CA, SAD rate mask</td></tr>
+<tr><td>edid_csum</td><td>checksum ok / corrupt reject</td></tr>
+<tr><td>hdcp_ksv</td><td>exactly 20 ones</td></tr>
+<tr><td>hdcp_srm</td><td>SRM parse + revocation match</td></tr>
+<tr><td>hdcp_cert</td><td>cert struct size + RSA exponent</td></tr>
+<tr><td>dpcd_const</td><td>DPCD constants match spec</td></tr>
+</table>
+
+<h2>11.4. HW Tests (3)</h2>
+<table>
+<tr><th>Test</th><th>Checks</th></tr>
+<tr><td>aux_hw</td><td>HW_VERSION readback + AUX idle</td></tr>
+<tr><td>sink_probe</td><td>live DPCD rev + caps</td></tr>
+<tr><td>bringup</td><td>full link training end-to-end</td></tr>
+</table>
+
+<h2>11.5. Running</h2>
+<pre><code>dp_selftest_set_hw_controller(&ctrl);   // optional
+dp_selftest_list();                     // lists all tests
+int rc = dp_selftest_run_all();         // runs all tests</code></pre>
+
+<!-- ================================================================ -->
+<!-- 12. C++ LAYER                                                    -->
+<!-- ================================================================ -->
+<h1 class="section" id="cpp">12. C++ Layer (dp_controller.hpp)</h1>
+
+<p>Header-only convenience layer over the C API. It does not replace the core, it provides:</p>
+
+<h2>12.1. Types</h2>
+<pre><code>enum class Error { Ok, Generic, Timeout, Invalid, NoMemory, Busy,
+                    AuxNack, AuxDefer, AuxCrc, LinkTrain, Edid, NoDevice,
+                    NotSupported, Protocol, Hdcp };
+
+enum class State { Reset, Detected, AuxReady, LinkTrainCr, LinkTrainEq,
+                    LinkReady, StreamReady, ActiveStream, Suspend, Resume,
+                    ErrorFault };
+
+enum class Bandwidth { Rbr, Hbr, Hbr2, Hbr3, Uhbr10, Uhbr20, Uhbr135 };
+enum class LaneCount { One=1, Two=2, Four=4 };
+enum class PixelFormat { Rgb, Yuv444, Yuv422, Yuv420, Raw };
+enum class Bpc { B6=6, B8=8, B10=10, B12=12, B16=16 };
+enum class Colorimetry { Rgb709, Rgb601, Bt709, XvYcc601, XvYcc709, ... };</code></pre>
+
+<h2>12.2. Result&lt;T&gt;</h2>
+<pre><code>template &lt;typename T&gt;
+class Result {
+public:
+    Result(T value);
+    Result(Error e);
+    bool  has_value() const;
+    T&    value();
+    T     value_or(T def) const;
+    Error error() const;
+};</code></pre>
+
+<h2>12.3. Controller (RAII)</h2>
+<pre><code>dp::Controller ctrl(dp::ControllerConfig{
+    .phys_addr = 0x4000_0000,
+    .virt_addr = 0xFFFF_FFC0_4000_0000,
+    .mapped_size = 0x4000,
+    .preferred_bw = dp::Bandwidth::Hbr3,
+    .preferred_lanes = dp::LaneCount::Four,
+    .enable_audio = true,
+    .enable_hdcp = true,
+    .enable_mst = false,
+});
+
+auto e = ctrl.bring_up(timing_4k60, dp::PixelFormat::Rgb, dp::Bpc::B8);
+if (!e.has_value()) return e;
+
+ctrl.set_on_state_change([](dp::State old_s, dp::State new_s) {
+    dp_info("state %d -> %d", (int)old_s, (int)new_s);
+});
+
+// RAII shutdown in destructor
+</code></pre>
+
+<h2>12.4. StreamHandle</h2>
+<pre><code>{
+    dp::StreamHandle stream(ctrl, 0);
+    if (stream.enable()) { /* ... */ }
+}   // auto-disable in destructor
+</code></pre>
+
+<h2>12.5. EdidBlob</h2>
+<pre><code>auto blob = dp::EdidBlob::read(ctrl);
+if (blob.has_value()) {
+    for (auto& t : blob.value().timings()) {
+        dp_info("%ux%u@%u", t.hactive, t.vactive, t.refresh_hz);
+    }
+    auto dtd = blob.value().find_dtd(1920, 1080);
+}</code></pre>
+
+<h2>12.6. RegField (compile-time bitfield)</h2>
+<pre><code>using PSR_EN = dp::RegField&lt;0x340, 0x01, 0&gt;;
+PSR_EN::set(ctrl, 1);
+u32 v = PSR_EN::get(ctrl);</code></pre>
+
+<!-- ================================================================ -->
+<!-- 13. API REFERENCE                                                -->
+<!-- ================================================================ -->
+<h1 class="section" id="api">13. API Reference</h1>
+
+<h2>13.1. AUX / DPCD</h2>
+<table>
+<tr><th>Function</th><th>Description</th><th>Status</th></tr>
+<tr><td><code>dp_aux_transaction</code></td><td>Single AUX transaction with retry</td><td>public</td></tr>
+<tr><td><code>dp_aux_read_dpcd</code></td><td>DPCD read (chunked 16 B)</td><td>public</td></tr>
+<tr><td><code>dp_aux_write_dpcd</code></td><td>DPCD write (chunked 16 B)</td><td>public</td></tr>
+<tr><td><code>dp_aux_i2c_read</code></td><td>I2C read (EDID/HDCP)</td><td>public</td></tr>
+<tr><td><code>dp_aux_i2c_write</code></td><td>I2C write (EDID/HDCP)</td><td>public</td></tr>
+</table>
+
+<h2>13.2. Link</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>dp_link_read_caps</code></td><td>Read max rate / lanes / enhanced / TPS3 / downspread</td></tr>
+<tr><td><code>dp_link_set_rate</code></td><td>Set BW and lanes in DPCD + HW</td></tr>
+<tr><td><code>dp_link_train_cr</code></td><td>CR sequence (TP1)</td></tr>
+<tr><td><code>dp_link_train_eq</code></td><td>EQ sequence (TP2/TP3)</td></tr>
+<tr><td><code>dp_link_train</code></td><td>Full sequence with power-on and caps check</td></tr>
+<tr><td><code>dp_link_verify_status</code></td><td>Verify CR/EQ/INTERLANE_ALIGN</td></tr>
+</table>
+
+<h2>13.3. EDID</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>dp_edid_read</code></td><td>Base + CEA (via DP AUX)</td></tr>
+<tr><td><code>hdmi_edid_read</code></td><td>Base + extensions (via HDMI DDC)</td></tr>
+<tr><td><code>dp_edid_parse</code></td><td>All timings → edid_timing_t[]</td></tr>
+<tr><td><code>dp_edid_find_dtd</code></td><td>Specific DTD by h/v</td></tr>
+</table>
+
+<h2>13.4. Stream</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>dp_stream_set_timing</code></td><td>Single-mode MSA program</td></tr>
+<tr><td><code>dp_stream_set_timing_ex</code></td><td>MST-aware MSA program</td></tr>
+<tr><td><code>dp_stream_enable</code> / <code>_ex</code></td><td>Enable stream</td></tr>
+<tr><td><code>dp_stream_disable</code> / <code>_ex</code></td><td>Disable stream</td></tr>
+<tr><td><code>dp_stream_update_msa</code> / <code>_ex</code></td><td>Re-apply MSA from timing</td></tr>
+</table>
+
+<h2>13.5. Audio</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>dp_audio_configure</code></td><td>Sample rate, channel status, unmute</td></tr>
+<tr><td><code>dp_audio_enable</code> / <code>disable</code></td><td>Reset+enable / disable FIFO</td></tr>
+<tr><td><code>dp_snd_card_init</code></td><td>Card initialization</td></tr>
+<tr><td><code>dp_snd_card_set_eld</code></td><td>Set ELD, rebuild constraints</td></tr>
+<tr><td><code>dp_snd_pcm_prepare</code></td><td>Allocate DMA area</td></tr>
+<tr><td><code>dp_snd_pcm_apply_hw_params</code></td><td>Validate + write parameters</td></tr>
+<tr><td><code>dp_snd_pcm_start</code> / <code>stop</code></td><td>Start/stop stream</td></tr>
+<tr><td><code>dp_snd_pcm_period_elapsed</code></td><td>Period callback</td></tr>
+</table>
+
+<h2>13.6. HDCP</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>dp_hdcp_enable</code></td><td>Init HDCP 1.x or 2.2</td></tr>
+<tr><td><code>dp_hdcp_disable</code></td><td>Disable</td></tr>
+<tr><td><code>dp_hdcp_authenticate</code></td><td>Synchronous tick</td></tr>
+<tr><td><code>dp_hdcp_status</code></td><td>Read state</td></tr>
+<tr><td><code>dp_hdcp_poll</code></td><td>Async tick (call from timer)</td></tr>
+<tr><td><code>dp_hdcp_frame_tick</code></td><td>Per-frame tick (Ri update)</td></tr>
+<tr><td><code>dp_hdcp_stream_manage</code></td><td>MST stream enable/disable</td></tr>
+<tr><td><code>dp_hdcp_load_srm</code></td><td>Load SRM</td></tr>
+</table>
+
+<h2>13.7. DSC / PSR / ALPM</h2>
+<p>See Block 7 — sections 10.1.5, 10.2, 10.3.</p>
+
+<h2>13.8. MST</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>dp_mst_enable</code> / <code>disable</code></td><td>Enable/disable MST</td></tr>
+<tr><td><code>dp_mst_allocate_vcpi</code> / <code>clear_vcpi</code></td><td>Payload allocate/deallocate</td></tr>
+<tr><td><code>dp_mst_sideband_send</code> / <code>receive</code></td><td>SB TX/RX</td></tr>
+<tr><td><code>dp_mst_discover_topology</code></td><td>LINK_ADDRESS broadcast</td></tr>
+<tr><td><code>dp_mst_enum_path_resources</code></td><td>ENUM_PATH_RESOURCES</td></tr>
+<tr><td><code>dp_mst_alloc_and_assign</code></td><td>Allocate + VCPI check</td></tr>
+<tr><td><code>dp_mst_teardown_port</code></td><td>Teardown of an entire port</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<!-- 14. HW REGISTER MAP                                              -->
+<!-- ================================================================ -->
+<h1 class="section" id="regmap">14. HW Register Map</h1>
+
+<h2>14.1. DP core (offsets in <code>dp_hardware_registers_t</code>)</h2>
+<table>
+<tr><th>Range</th><th>Block</th><th>Description</th></tr>
+<tr><td>0x000–0x024</td><td>Core</td><td>HW_VERSION, GLOBAL_CAPS, SYSTEM_CONTROL/STATUS, IRQ, AUX_CH_CTL/ADDR/DATA, LINK_TRAINING_CTL</td></tr>
+<tr><td>0x028–0x067</td><td>Lanes</td><td>LANE_STATUS/SKEW/VOLTAGE_SWING/PRE_EMPHASIS ×4</td></tr>
+<tr><td>0x068–0x09F</td><td>MSA</td><td>MSA_MISC0/1, HORIZONTAL_*, VERTICAL_*, PIXEL_CLOCK_RATE, AUDIO_CONTROL/STATUS, STREAM_ASSIGNMENT</td></tr>
+<tr><td>0x0A0–0x13F</td><td>MST</td><td>MST_CTL/STATUS, SB_TX/RX, VC_PAYLOAD_STAT</td></tr>
+<tr><td>0x140–0x1BF</td><td>Audio</td><td>SDP_CTL/HDR/DATA, FIFO_*, DMA_*, SAMPLE_RATE, CH_STATUS, MUTE</td></tr>
+<tr><td>0x1C0–0x2C0</td><td>HDCP</td><td>HDCP1 cipher registers, HDCP2.2 indirect</td></tr>
+<tr><td>0x300–0x33F</td><td>DSC</td><td>DSC_CTL/STATUS, PPS_IDX/DATA/WINDOW, SLICE_CTL, OP_MODE, ERR_STATUS</td></tr>
+<tr><td>0x340–0x35F</td><td>PSR</td><td>PSR_CTL/STATUS, TIMER_IDLE/WAKEUP, IRQ_MASK/STATUS</td></tr>
+<tr><td>0x360–0x37F</td><td>ALPM</td><td>ALPM_CTL/STATUS, TIMER_IDLE/WAKEUP, WAKEUP_CFG, IRQ_MASK/STATUS</td></tr>
+<tr><td>0x380–0x39F</td><td>reserved</td><td>—</td></tr>
+</table>
+
+<h2>14.2. HDMI core</h2>
+<table>
+<tr><th>Offset</th><th>Name</th></tr>
+<tr><td>0x00–0x14</td><td>HW_VERSION, GLOBAL_CAPS, SYSTEM_CONTROL/STATUS, IRQ_MASK/STATUS</td></tr>
+<tr><td>0x18–0x20</td><td>DDC_CTL, DDC_ADDR, DDC_DATA</td></tr>
+<tr><td>0x24–0x50</td><td>TMDS_CTL/CLK, PIXEL_REPEAT, COLOR_DEPTH/FORMAT, VIDEO_MODE, H/V_SYNC/ACTIVE/TOTAL</td></tr>
+<tr><td>0x54–0x5C</td><td>AUDIO_CTL, AUDIO_CH_STATUS, AUDIO_DATA</td></tr>
+<tr><td>0x60–0x64</td><td>INFOFRAME_CTL/DATA</td></tr>
+<tr><td>0x68–0x6C</td><td>HDCP_CTL, HDCP_STATUS</td></tr>
+<tr><td>0x70–0x74</td><td>CEC_CTL, CEC_DATA</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<!-- 15. DPCD MAP                                                     -->
+<!-- ================================================================ -->
+<h1 class="section" id="dpcd">15. DPCD Map (DisplayPort Configuration Data)</h1>
+
+<h2>15.1. Link / Sink Info (0x000–0x0FF)</h2>
+<table>
+<tr><th>Address</th><th>Name</th><th>Description</th></tr>
+<tr><td>0x00000</td><td>DPCD_REV</td><td>DPCD version (0x10–0x14)</td></tr>
+<tr><td>0x00001</td><td>MAX_LINK_RATE</td><td>Max link rate (0x06 RBR, 0x0A HBR, 0x14 HBR2, 0x1E HBR3)</td></tr>
+<tr><td>0x00002</td><td>MAX_LANE_COUNT</td><td>Max lanes (bit 7 = Enhanced Frame)</td></tr>
+<tr><td>0x00003</td><td>MAX_DOWNSPREAD</td><td>Bit 6 = No AUX handshake LT</td></tr>
+<tr><td>0x00004</td><td>NORP</td><td>Bit 0 = Downstream port present</td></tr>
+<tr><td>0x00007</td><td>DOWN_STREAM_PORT_COUNT</td><td>Bit 7 = OUI supported</td></tr>
+<tr><td>0x00008</td><td>RECEIVE_PORT_0_CAP</td><td>Bit 1 = Local EDID present</td></tr>
+<tr><td>0x0000E</td><td>TRAINING_AUX_RD_INTERVAL</td><td>Bit 7 = ALPM capable</td></tr>
+<tr><td>0x00021</td><td>MSTM_CAP</td><td>Bit 0 = MST capable</td></tr>
+<tr><td>0x00060</td><td>DSC_SUPPORT</td><td>Bit 0 = DSC supported</td></tr>
+<tr><td>0x00070</td><td>PSR_SUPPORT</td><td>Bit 0 = PSR supported</td></tr>
+</table>
+
+<h2>15.2. Link Config (0x100–0x1FF)</h2>
+<table>
+<tr><th>Address</th><th>Name</th><th>Description</th></tr>
+<tr><td>0x00100</td><td>LINK_BW_SET</td><td>Value = MAX_LINK_RATE code</td></tr>
+<tr><td>0x00101</td><td>LANE_COUNT_SET</td><td>Lanes, bit 7 = Enhanced Frame</td></tr>
+<tr><td>0x00102</td><td>TRAINING_PATTERN_SET</td><td>0=none, 1=TP1, 2=TP2, 3=TP3</td></tr>
+<tr><td>0x00103–0x00106</td><td>TRAINING_LANE0..3_SET</td><td>VS/PE per lane</td></tr>
+<tr><td>0x00107</td><td>DOWNSPREAD_CTRL</td><td>Bit 4 = spread 0.5%, bit 7 = MSA ignore</td></tr>
+<tr><td>0x00108</td><td>MAIN_LINK_CHANNEL_CODING_SET</td><td>Bit 0 = 8b/10b, bit 1 = 128b/132b</td></tr>
+<tr><td>0x00111</td><td>MSTM_CTRL</td><td>Bit 0 = MST_EN</td></tr>
+<tr><td>0x00160</td><td>DSC_ENABLE</td><td>Bit 0 = enable DSC</td></tr>
+<tr><td>0x00170</td><td>PSR_EN_CFG</td><td>Bit 0 = enable PSR</td></tr>
+<tr><td>0x001C0–0x001C2</td><td>PAYLOAD_ALLOCATE_SET/START_TIME_SLOT/TIME_SLOT_COUNT</td><td>MST payload</td></tr>
+</table>
+
+<h2>15.3. Status (0x200–0x2FF)</h2>
+<table>
+<tr><th>Address</th><th>Name</th><th>Description</th></tr>
+<tr><td>0x00200</td><td>SINK_COUNT</td><td>Number of sinks</td></tr>
+<tr><td>0x00202</td><td>LANE0_1_STATUS</td><td>CR_DONE, EQ_DONE, SYMBOL_LOCKED per lane</td></tr>
+<tr><td>0x00204</td><td>LANE_ALIGN_STATUS_UPDATED</td><td>Bit 0 = INTERLANE_ALIGN_DONE</td></tr>
+<tr><td>0x00206</td><td>ADJUST_REQUEST_LANE0_1</td><td>VS/PE request for lanes 0-1</td></tr>
+<tr><td>0x00207</td><td>ADJUST_REQUEST_LANE2_3</td><td>VS/PE request for lanes 2-3</td></tr>
+<tr><td>0x00221</td><td>ALPM_CTRL</td><td>Bit 0 = ALPM enable</td></tr>
+<tr><td>0x00222</td><td>ALPM_STATUS</td><td>Current ALPM state</td></tr>
+</table>
+
+<h2>15.4. Power / HDCP (0x600–0x6FF)</h2>
+<table>
+<tr><th>Address</th><th>Name</th><th>Description</th></tr>
+<tr><td>0x00600</td><td>SET_POWER</td><td>0=off, 1=D0, 2=D3</td></tr>
+<tr><td>0x00680</td><td>HDCP_BCAPS</td><td>Bit 5=KSV ready, bit 6=repeater</td></tr>
+<tr><td>0x00681</td><td>HDCP_BSTATUS</td><td>Max devs, cascade</td></tr>
+<tr><td>0x00683</td><td>HDCP_KSV_FIFO</td><td>KSV list downstream</td></tr>
+<tr><td>0x00692</td><td>HDCP_2_2_BCAPS</td><td>Bit 0=capable, bit 1=encrypted</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<!-- 16. BUILD / INTEGRATION                                          -->
+<!-- ================================================================ -->
+<h1 class="section" id="build">16. Build / CoTanOS Integration</h1>
+
+<h2>16.1. Directory Structure</h2>
+<pre><code>drv/dp/
+├── Makefile
+├── drv.toml
+├── README.md
+├── tree.md
+├── docs/
+│   └── dp_core.html              ← this documentation
+├── include/
+│   ├── dp_core.h                 ← C API (~700 LOC)
+│   └── dp_controller.hpp         ← C++ API (~660 LOC)
+└── src/
+    ├── core_io.c                 ← existing
+    ├── core_io.h                 ← existing
+    ├── dp_controller.cpp         ← C++ glue
+    ├── dp_core.c                 ← core (blocks 1–7, ~6840 LOC)
+    └── dp_selftest.c             ← tests (block 8, ~740 LOC)</code></pre>
+
+<h2>16.2. Makefile Snippet</h2>
+<pre><code>DP_SRC     := src/core_io.c src/dp_core.c src/dp_selftest.c
+DP_CXX_SRC := src/dp_controller.cpp
+DP_INC     := -Iinclude -I.
+
+DP_CFLAGS   := $(CFLAGS)   $(DP_INC) -std=c11   -Wall -Wextra -Wno-unused-parameter
+DP_CXXFLAGS := $(CXXFLAGS) $(DP_INC) -std=c++17 -Wall -Wextra -Wno-unused-parameter
+
+DP_OBJ := $(DP_SRC:.c=.o) $(DP_CXX_SRC:.cpp=.o)
+
+drv_dp.a: $(DP_OBJ)
+	$(AR) rcs $@ $^
+
+%.o: %.c
+	$(CC)  $(DP_CFLAGS)   -c $< -o $@
+
+%.o: %.cpp
+	$(CXX) $(DP_CXXFLAGS) -c $< -o $@
+
+selftest_dp.elf: $(DP_OBJ) src/selftest_entry.o
+	$(CXX) $(DP_CXXFLAGS) -o $@ $^ -T $(LINKER_SCRIPT)</code></pre>
+
+<h2>16.3. drv.toml</h2>
+<pre><code>[driver]
+name = "dp_core"
+version = "1.0.0"
+description = "DisplayPort 1.4 / HDMI 2.0 unified core"
+
+[driver.arch]
+riscv = ["rv32", "rv64"]
+
+[driver.sources]
+c   = ["src/core_io.c", "src/dp_core.c", "src/dp_selftest.c"]
+cxx = ["src/dp_controller.cpp"]
+
+[driver.includes]
+paths = ["include", "."]
+
+[driver.flags]
+c   = ["-std=c11",   "-Wall", "-Wextra", "-Wno-unused-parameter"]
+cxx = ["-std=c++17", "-Wall", "-Wextra", "-Wno-unused-parameter"]
+
+[driver.tests]
+enabled = true
+binary  = "selftest_dp.elf"
+entry   = "dp_selftest_run_all"
+timeout_s = 10</code></pre>
+
+<h2>16.4. Selftest Entry Point</h2>
+<pre><code>/* src/selftest_entry.c */
+#include "dp_core.h"
+
+extern void dp_selftest_set_hw_controller(dp_controller_t *);
+extern int  dp_selftest_run_all(void);
+
+extern vaddr_t bsp_dp_mmio_virt(void);
+extern paddr_t bsp_dp_mmio_phys(void);
+extern size_t  bsp_dp_mmio_size(void);
+
+void _start(void)
+{
+    static dp_controller_t ctrl;
+    dp_controller_init(&ctrl,
+                       bsp_dp_mmio_phys(),
+                       bsp_dp_mmio_virt(),
+                       bsp_dp_mmio_size());
+
+    dp_selftest_set_hw_controller(&ctrl);
+    int rc = dp_selftest_run_all();
+
+    /* QEMU virt sifive_test exit */
+    volatile u32 *test = (volatile u32 *)0x100000;
+    *test = (rc == DP_OK) ? 0x5555 : (0x3333 | ((u32)rc << 16));
+
+    for (;;) __asm__ __volatile__("wfi");
+}</code></pre>
+
+<h2>16.5. Porting to Another IP Core</h2>
+<ol>
+  <li>Change <code>dp_hardware_registers_t</code> in <code>dp_core.h</code> to match your IP</li>
+  <li>Change <code>#define DP_REG_*</code> in <code>dp_core.c</code> to your IP's offsets</li>
+  <li>Change <code>hdmi_ddc_xfer()</code> for your DDC model</li>
+  <li>Change <code>hdcp1_cipher_*</code> if your HDCP 1.x cipher has different registers</li>
+  <li>Change <code>dp_dsc_hw_write_pps()</code> if the PPS window size differs</li>
+  <li>Run <code>dp_selftest_run_all()</code> — SW tests confirm port correctness</li>
+</ol>
+
+<!-- ================================================================ -->
+<!-- 17. TESTING                                                      -->
+<!-- ================================================================ -->
+<h1 class="section" id="testing">17. Testing</h1>
+
+<h2>17.1. SW Tests (no hardware)</h2>
+<p>Can run on any host with C11 + C++17:</p>
+<pre><code>$ make selftest_dp.elf
+$ qemu-system-riscv64 -machine virt -bios none -kernel selftest_dp.elf -nographic</code></pre>
+
+<h2>17.2. HW Tests (real sink)</h2>
+<pre><code>dp_selftest_set_hw_controller(&ctrl);
+dp_selftest_run_by_name("aux_hw");
+dp_selftest_run_by_name("sink_probe");
+dp_selftest_run_by_name("bringup");</code></pre>
+
+<h2>17.3. Regression Testing</h2>
+<p>Every commit should run <code>dp_selftest_run_all()</code> and pass 0 failures.
+SW tests require no hardware, so they can be wired into CI (GitHub Actions / custom bot).</p>
+
+<h2>17.4. Benchmarks</h2>
+<p>The framework reports <code>elapsed_us</code> per test. Typical times on QEMU:</p>
+<table>
+<tr><th>Test</th><th>Time (QEMU virt, RV64)</th></tr>
+<tr><td>helpers</td><td>&lt; 10 µs</td></tr>
+<tr><td>sha1</td><td>~50 µs</td></tr>
+<tr><td>sha256</td><td>~80 µs</td></tr>
+<tr><td>hmac</td><td>~150 µs</td></tr>
+<tr><td>aes128</td><td>~100 µs</td></tr>
+<tr><td>bignum (2048-bit modexp)</td><td>~5–15 ms</td></tr>
+<tr><td>dsc_round</td><td>&lt; 20 µs</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<!-- 18. LIMITATIONS                                                  -->
+<!-- ================================================================ -->
+<h1 class="section" id="limits">18. Known Limitations</h1>
+
+<div class="callout warn">
+<strong>The following are intentional simplifications — candidates for future expansion.</strong>
+</div>
+
+<ul>
+  <li><strong>HDCP 1.x cipher</strong> — requires a hardware block; a SW implementation requires a DCP LLC license (not included)</li>
+  <li><strong>DCP root key</strong> — embedded 2048-bit public key; for production load from firmware</li>
+  <li><strong>MST PBN</strong> — approximation as <code>pixel_clock × bpp</code>; production requires per-slice slot negotiation</li>
+  <li><strong>DSC on complex modes</strong> — PPS compute is 8bpc/8bpp baseline; for 10/12bpc, extend RC tables</li>
+  <li><strong>EDID &gt; 2 extensions</strong> — <code>dp_edid_read</code> reads blocks 1–2 only (bytes 128–383); higher require segment pointer (TODO in <code>hdmi_ddc_xfer</code>)</li>
+  <li><strong>HDMI VIC parse</strong> — best-effort iteration over <code>0xEx</code> bytes; not full CEA-861-G</li>
+  <li><strong>VIC → timing</strong> — pclk/hblank/vblank for VIC in standard timings are approximated (full table only for VIC lookup)</li>
+  <li><strong>RNG</strong> — placeholder (xorshift + time); use HW RNG in production</li>
+  <li><strong>DMA ring</strong> — caller-provided pointer; no built-in DMA allocator</li>
+  <li><strong>MST topology</strong> — HDCP 2.2 repeater requires integration with Block 4 MST (partially done)</li>
+</ul>
+
+<!-- ================================================================ -->
+<!-- 19. APPENDIX                                                     -->
+<!-- ================================================================ -->
+<h1 class="section" id="appendix">19. Appendix</h1>
+
+<h2>19.1. Abbreviations</h2>
+<table>
+<tr><th>Abbr.</th><th>Expansion</th></tr>
+<tr><td>AUX</td><td>AUXiliary channel (1 Mbps DP sideband)</td></tr>
+<tr><td>CEA</td><td>Consumer Electronics Association (now CTA)</td></tr>
+<tr><td>CR</td><td>Clock Recovery (link training phase 1)</td></tr>
+<tr><td>DPCD</td><td>DisplayPort Configuration Data</td></tr>
+<tr><td>DSC</td><td>Display Stream Compression</td></tr>
+<tr><td>DTD</td><td>Detailed Timing Descriptor</td></tr>
+<tr><td>EDID</td><td>Extended Display Identification Data</td></tr>
+<tr><td>ELD</td><td>EDID Like Data</td></tr>
+<tr><td>EQ</td><td>Channel Equalization (link training phase 2)</td></tr>
+<tr><td>HDCP</td><td>High-bandwidth Digital Content Protection</td></tr>
+<tr><td>HPD</td><td>Hot Plug Detect</td></tr>
+<tr><td>MOT</td><td>Middle-of-Transaction (I2C-over-AUX)</td></tr>
+<tr><td>MSA</td><td>Main Stream Attributes</td></tr>
+<tr><td>MST</td><td>Multi-Stream Transport</td></tr>
+<tr><td>PBN</td><td>Payload Bandwidth Number (MST)</td></tr>
+<tr><td>PPS</td><td>Picture Parameter Set (DSC)</td></tr>
+<tr><td>PSR</td><td>Panel Self Refresh</td></tr>
+<tr><td>SAD</td><td>Short Audio Descriptor</td></tr>
+<tr><td>SDP</td><td>Secondary Data Packet</td></tr>
+<tr><td>VIC</td><td>Video Identification Code (CEA-861)</td></tr>
+<tr><td>VCPI</td><td>Virtual Channel Payload Identifier (MST)</td></tr>
+<tr><td>VS/PE</td><td>Voltage Swing / Pre-emphasis (link training)</td></tr>
+</table>
+
+<h2>19.2. References</h2>
+<ul>
+  <li>VESA DisplayPort Standard 1.4a (2015)</li>
+  <li>VESA DisplayPort Alt Mode on USB Type-C 1.0</li>
+  <li>VESA Display Stream Compression (DSC) Standard 1.2a</li>
+  <li>VESA Enhanced Extended Display Identification Data (E-EDID) 1.4</li>
+  <li>CEA-861-F / CEA-861-G</li>
+  <li>HDMI Specification 2.0b</li>
+  <li>HDCP Specification 1.3 / 1.4</li>
+  <li>HDCP Specification 2.2</li>
+  <li>FIPS PUB 197 (AES)</li>
+  <li>FIPS PUB 180-4 (SHA)</li>
+  <li>RFC 4231 (HMAC test vectors)</li>
+  <li>NIST SP 800-38A (CBC mode)</li>
+</ul>
+
+<h2>19.3. Changelog</h2>
+<table>
+<tr><th>Version</th><th>Date</th><th>Changes</th></tr>
+<tr><td>1.0.0</td><td>2026-11</td><td>First complete release: blocks 1–8, C++ layer</td></tr>
+</table>
+
+<footer class="doc">
+DP/HDMI Core Driver — Technical Documentation · v1.0.0<br>
+CoTanOS · RISC-V · C11 / C++17 · ~8940 LOC<br>
+Generated as a self-contained HTML file, no external dependencies.
+</footer>
+
+</article>
+</main>
+
+</body>
+</html>
