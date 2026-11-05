@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoTanOS Storage Core — Technical Reference</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-alt: #161b22;
+    --bg-code: #1c2128;
+    --bg-note: #1f2937;
+    --bg-warn: #2d1f14;
+    --bg-err:  #2d1414;
+    --fg: #c9d1d9;
+    --fg-dim: #8b949e;
+    --fg-hi: #f0f6fc;
+    --accent: #58a6ff;
+    --accent2: #79c0ff;
+    --border: #30363d;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --mono: "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 70px; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    background: var(--bg);
+    color: var(--fg);
+  }
+  header.top {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--bg-alt);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  header.top h1 { margin: 0; font-size: 18px; font-weight: 600; color: var(--fg-hi); }
+  header.top .badge {
+    background: var(--accent); color: #000;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  }
+  header.top .meta { margin-left: auto; color: var(--fg-dim); font-size: 13px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px 96px; }
+
+  nav.toc {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 24px;
+    margin: 0 0 40px;
+    font-size: 14px;
+  }
+  nav.toc h2 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--fg-dim); font-weight: 600; }
+  nav.toc ol { margin: 0; padding-left: 20px; columns: 2; column-gap: 32px; }
+  nav.toc li { margin-bottom: 4px; break-inside: avoid; }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  nav.toc ol ol { padding-left: 16px; font-size: 13px; }
+  nav.toc ol ol li { margin-bottom: 2px; }
+
+  h2 {
+    font-size: 26px; font-weight: 700; color: var(--fg-hi);
+    margin: 56px 0 20px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  h2:first-of-type { margin-top: 0; }
+  h3 { font-size: 19px; font-weight: 600; color: var(--fg-hi); margin: 32px 0 14px; }
+  h4 { font-size: 15px; font-weight: 600; color: var(--accent2);
+       margin: 22px 0 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  p { margin: 0 0 12px; }
+  code {
+    font-family: var(--mono);
+    background: var(--bg-code);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+    color: var(--accent2);
+  }
+  pre {
+    font-family: var(--mono);
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 12px 0 20px;
+  }
+  pre code { background: none; padding: 0; color: var(--fg); }
+  .kw { color: var(--purple); }
+  .cm { color: var(--fg-dim); font-style: italic; }
+  .str { color: var(--green); }
+  .num { color: var(--yellow); }
+  .type { color: var(--accent2); }
+
+  table {
+    width: 100%; border-collapse: collapse;
+    margin: 12px 0 24px;
+    font-size: 13.5px;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  thead { background: var(--bg-code); }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--fg-hi); font-size: 13px;
+       text-transform: uppercase; letter-spacing: 0.4px; }
+  tr:last-child td { border-bottom: none; }
+  td code { font-size: 12.5px; }
+
+  .note, .warn, .err, .info {
+    border-left: 4px solid var(--accent);
+    background: var(--bg-note);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 14px;
+  }
+  .note { border-left-color: var(--accent); background: var(--bg-note); }
+  .warn { border-left-color: var(--yellow); background: var(--bg-warn); }
+  .err  { border-left-color: var(--red);    background: var(--bg-err); }
+  .info { border-left-color: var(--green);  background: #14241a; }
+  .label { display: inline-block; font-weight: 700; text-transform: uppercase;
+           font-size: 11px; letter-spacing: 1px; margin-right: 8px; }
+  .note .label { color: var(--accent); }
+  .warn .label { color: var(--yellow); }
+  .err  .label { color: var(--red); }
+  .info .label { color: var(--green); }
+
+  .arch {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.8;
+    color: var(--fg);
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .arch .box { color: var(--accent2); }
+  .arch .arrow { color: var(--fg-dim); }
+  .arch .tag { color: var(--green); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 24px;
+    text-align: center;
+    color: var(--fg-dim);
+    font-size: 12px;
+    margin-top: 80px;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="badge">CoTanOS</span>
+  <h1>Storage Core — Technical Reference</h1>
+  <span class="meta">v1.0 &middot; RISC-V RV32/RV64 &middot; bare-metal C11 / C++17</span>
+</header>
+
+<main>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#layers">Layer Stack</a>
+      <ol>
+        <li><a href="#layer-mmio">stor_mmio.h</a></li>
+        <li><a href="#layer-mm">stor_mm.h / .c</a></li>
+        <li><a href="#layer-pci">stor_pci.c</a></li>
+        <li><a href="#layer-blk">Unified block layer</a></li>
+      </ol>
+    </li>
+    <li><a href="#nvme">NVMe (1.4c + 2.0)</a>
+      <ol>
+        <li><a href="#nvme-init">Controller bring-up</a></li>
+        <li><a href="#nvme-io">I/O queues and NVM commands</a></li>
+        <li><a href="#nvme-logs">Log pages</a></li>
+        <li><a href="#nvme-zns">ZNS</a></li>
+        <li><a href="#nvme-ext">KV, Reservations, Directives, SR-IOV, Multipath</a></li>
+      </ol>
+    </li>
+    <li><a href="#ahci">AHCI / SATA</a>
+      <ol>
+        <li><a href="#ahci-init">HBA bring-up</a></li>
+        <li><a href="#ahci-transport">Transport layer</a></li>
+        <li><a href="#ahci-extras">TRIM, SMART, secure erase, recovery</a></li>
+      </ol>
+    </li>
+    <li><a href="#aac">AAC / AACRAID</a></li>
+    <li><a href="#cpp">C++ wrapper</a></li>
+    <li><a href="#selftest">Selftest framework</a></li>
+    <li><a href="#errors">Error codes</a></li>
+    <li><a href="#regmaps">Register maps</a></li>
+    <li><a href="#structs">Protocol structures</a></li>
+    <li><a href="#integration">Build &amp; integration</a></li>
+    <li><a href="#limitations">Known limitations</a></li>
+  </ol>
+</nav>
+
+<!-- ================================================================== -->
+<h2 id="overview">1. Overview</h2>
+
+<p>The <strong>CoTanOS Storage Driver Suite</strong> provides a unified, bare-metal device driver stack for NVMe (1.4c and 2.0), AHCI/SATA (HDD, SSD), and AAC/AACRAID controllers running on RISC-V RV32 or RV64. It is written in C11 with an optional C++17 wrapper and has no dependency on libc, exceptions, or runtime support.</p>
+
+<div class="grid2">
+  <div>
+    <h4>What it does</h4>
+    <ul>
+      <li>PCIe enumeration (ECAM + legacy stub + custom vtable)</li>
+      <li>NVMe: full command set, admin + I/O queues, namespaces, SMART, firmware, ZNS, KV, Reservations, Directives, SR-IOV, multipath detection</li>
+      <li>AHCI: HBA/port lifecycle, ATA IDENTIFY, DMA and NCQ R/W, TRIM, SMART, secure erase, sanitize, hotplug, error recovery</li>
+      <li>AAC: mailbox init, FIB queue, LD I/O, PD SMART via SCSI ATA PASS-THROUGH</li>
+      <li>Unified async block API (submit / poll / completion callback)</li>
+      <li>Hardware-free selftest harness</li>
+    </ul>
+  </div>
+  <div>
+    <h4>What it does not do</h4>
+    <ul>
+      <li>No memory allocation: every buffer comes from <code>stor_dma_alloc</code> (kernel-supplied)</li>
+      <li>No interrupt handling: MSI-X / INTx wiring is caller's responsibility</li>
+      <li>No libc, no exceptions, no <code>std::vector</code>, no <code>malloc</code></li>
+      <li>No NVMe-oF, no port multiplier, no ATAPI, no IOMMU management (delegated)</li>
+      <li>No filesystems, no partition tables, no caching layer</li>
+    </ul>
+  </div>
+</div>
+
+<table>
+  <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Total public C API</td><td>~85 functions</td></tr>
+    <tr><td>Total public C++ API</td><td>~40 symbols</td></tr>
+    <tr><td>Compile units</td><td>4 (<code>stor_mm.c</code>, <code>stor_pci.c</code>, <code>storage_core.c</code>, <code>storage_controller.cpp</code>)</td></tr>
+    <tr><td>Headers</td><td>4 (<code>stor_mmio.h</code>, <code>stor_mm.h</code>, <code>storage_core.h</code>, <code>storage_controller.hpp</code>)</td></tr>
+    <tr><td>Total LOC</td><td>~7 500</td></tr>
+    <tr><td>Static memory (NVMe)</td><td>~96 KiB (PRP pool) + per-queue rings</td></tr>
+    <tr><td>Static memory (AHCI)</td><td>~48 KiB (32 ports × 32 cmd tables × 256 B)</td></tr>
+    <tr><td>Static memory (AAC)</td><td>32 KiB (FIB queue)</td></tr>
+  </tbody>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="architecture">2. Architecture</h2>
+
+<div class="arch">┌────────────────────────────────────────────────────────────────────────────┐
+│ <span class="tag">Application / filesystem / partition layer</span>                                 │
+│   Uses stor_blk_dev_t or stor::cpp::BlockDevice                            │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │ stor_blk_submit / stor_blk_poll
+┌──────────────────────────────────▼─────────────────────────────────────────┐
+│ <span class="box">StorageCore</span>  (storage_core.c)                                          │
+│   ├─ <span class="tag">NVMe driver</span>     (admin, I/O, logs, ZNS, KV, SR-IOV, Reservations) │
+│   ├─ <span class="tag">AHCI/SATA driver</span> (HBA, ports, FIS, PRDT, NCQ, TRIM, SMART)          │
+│   ├─ <span class="tag">AAC/AACRAID</span>     (mailbox, FIB, LD I/O, PD passthrough)             │
+│   └─ <span class="tag">Unified blk layer</span>  (async submit/poll, sync wrappers)               │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │ stor_mm_ops_t vtable
+┌──────────────────────────────────▼─────────────────────────────────────────┐
+│ <span class="box">Memory</span>  (stor_mm.c)                                                    │
+│   ├─ stor_dma_alloc / free  ──▶ kernel (phys contig, coherent, zeroed)     │
+│   ├─ stor_mmio_map / unmap  ──▶ kernel (uncached, device-ordered VA)       │
+│   └─ stor_phys_to_virt / stor_virt_to_phys                                 │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │
+┌──────────────────────────────────▼─────────────────────────────────────────┐
+│ <span class="box">MMIO / RISC-V primitives</span>  (stor_mmio.h, header-only, inline)              │
+│   ├─ read/write{8,16,32,64} with fence                                     │
+│   ├─ CSR access (time, cycle, instret, mhartid, mstatus)                   │
+│   ├─ atomics (AMO + LR/SC), spinlock, mutex, semaphore                     │
+│   └─ delay (udelay / mdelay), barrier primitives, CRC                      │
+└──────────────────────────────────┬─────────────────────────────────────────┘
+                                   │
+                            <span class="tag">Hardware</span>
+</div>
+
+<p>Everything above <code>stor_mmio.h</code> is portable C11. The only RISC-V–specific code lives in <code>stor_mmio.h</code> (inline assembly for fences, atomics, CSR reads) and in the <code>stor_mm_ops_t</code> implementation supplied by the kernel.</p>
+
+<!-- ================================================================== -->
+<h2 id="layers">3. Layer Stack</h2>
+
+<h3 id="layer-mmio">3.1 <code>stor_mmio.h</code></h3>
+
+<p>Header-only foundation. All symbols are <code>stor_</code>-prefixed and <code>static inline</code> so multiple driver suites can share it without linker collisions.</p>
+
+<table>
+  <thead><tr><th>Category</th><th>Symbols</th></tr></thead>
+  <tbody>
+    <tr><td>Types</td><td><code>u8</code> <code>u16</code> <code>u32</code> <code>u64</code> <code>s8..s64</code> <code>vaddr_t</code> <code>paddr_t</code> <code>dma_addr_t</code> <code>usize</code> <code>ssize</code></td></tr>
+    <tr><td>Bit ops</td><td><code>stor_popcount32/64</code>, <code>stor_clz32</code>, <code>stor_ctz32</code>, <code>stor_ilog2</code>, <code>stor_bf_get/prep</code>, <code>stor_align_up/down/check</code>, <code>stor_is_pow2</code>, <code>stor_roundup_pow2</code></td></tr>
+    <tr><td>Byte order</td><td><code>stor_bswap16/32/64</code>, <code>stor_cpu_to_{le,be}*</code>, <code>stor_{le,be}*_to_cpu</code></td></tr>
+    <tr><td>Memory</td><td><code>stor_mem_copy/set/cmp</code>, <code>stor_mem_is_zero</code></td></tr>
+    <tr><td>Barriers</td><td><code>stor_mb/rmb/wmb</code>, <code>stor_smp_mb/rmb/wmb</code>, <code>stor_fence_i</code>, <code>STOR_READ_ONCE</code>, <code>STOR_WRITE_ONCE</code></td></tr>
+    <tr><td>MMIO</td><td><code>stor_read{b,w,l,q}</code> (fenced), <code>stor_write{b,w,l,q}</code> (fenced), <code>stor_raw_read{b,w,l,q}</code> (unfenced)</td></tr>
+    <tr><td>Registers</td><td><code>stor_reg_read/write/update</code>, <code>stor_reg_set/clear_bits</code>, <code>stor_reg_set_field</code>, <code>stor_reg_get_field</code></td></tr>
+    <tr><td>CPU</td><td><code>stor_wfi/nop/pause</code>, <code>stor_read_time/cycle/instret/mhartid/mstatus</code>, <code>stor_mie_enable/disable</code></td></tr>
+    <tr><td>Time</td><td><code>stor_udelay/mdelay</code>, <code>stor_poll_reg_bits_eq/ne</code></td></tr>
+    <tr><td>Atomics</td><td><code>stor_atomic_read/write_32/64</code>, <code>stor_atomic_fetch_{add,sub,and,or,xor}_32</code>, <code>stor_atomic_xchg_32</code>, <code>stor_atomic_cmpxchg_32/64</code>, <code>stor_atomic_test_and_set_32</code>, <code>stor_atomic_clear_bit_32</code>, <code>stor_atomic_test_bit_32</code></td></tr>
+    <tr><td>Locks</td><td><code>stor_spinlock_t</code> + <code>stor_spin_lock/unlock/trylock/init</code>, <code>stor_mutex_t</code>, <code>stor_semaphore_t</code></td></tr>
+    <tr><td>CRC</td><td><code>stor_crc8</code>, <code>stor_crc16_ccitt</code>, <code>stor_crc32</code></td></tr>
+  </tbody>
+</table>
+
+<p><strong>Timebase:</strong> <code>STOR_TIMEBASE_HZ</code> defaults to <code>1000000</code> (1 MHz). Override at build time if your <code>time</code> CSR runs at a different frequency.</p>
+
+<h3 id="layer-mm">3.2 <code>stor_mm.h</code> / <code>stor_mm.c</code></h3>
+
+<p>The kernel registers a <code>stor_mm_ops_t</code> vtable at boot. Every driver allocation and MMIO map goes through it. This is the <strong>only</strong> integration point required to make the driver work on a new platform.</p>
+
+<pre><code><span class="kw">typedef struct</span> {
+    <span class="kw">int</span>   (*alloc_dma)(<span class="type">size_t</span> size, <span class="type">size_t</span> align,
+                       <span class="type">dma_addr_t</span> *phys, <span class="type">void</span> **virt);
+    <span class="kw">void</span> (*free_dma)(<span class="type">dma_addr_t</span> phys, <span class="type">void</span> *virt, <span class="type">size_t</span> size);
+    <span class="kw">int</span>   (*map_mmio)(<span class="type">paddr_t</span> phys, <span class="type">size_t</span> size, <span class="type">vaddr_t</span> *virt);
+    <span class="kw">void</span> (*unmap_mmio)(<span class="type">vaddr_t</span> virt, <span class="type">size_t</span> size);
+    <span class="kw">void</span> *(*phys_to_virt)(<span class="type">paddr_t</span> phys);
+    <span class="type">paddr_t</span> (*virt_to_phys)(<span class="kw">const</span> <span class="type">void</span> *virt);
+    <span class="kw">void</span> *(*kmalloc_aligned)(<span class="type">size_t</span> size, <span class="type">size_t</span> align);
+    <span class="kw">void</span>  (*kfree_aligned)(<span class="type">void</span> *ptr, <span class="type">size_t</span> size);
+} stor_mm_ops_t;</code></pre>
+
+<p>Register with <code>stor_mm_init(&amp;ops)</code>. When the vtable is absent, all allocation calls return <code>STOR_ERR_NOT_SUPPORTED</code>; the driver core never assumes success.</p>
+
+<p><strong>DMA contract</strong> (kernel must honour):</p>
+<ul>
+  <li><code>alloc_dma</code> returns physically contiguous, zeroed, DMA-coherent memory.</li>
+  <li><code>*phys</code> is the address visible to the device. If an IOMMU is present, this is the IOVA; the driver does not translate further.</li>
+  <li><code>*virt</code> is a kernel VA in the direct map, suitable for <code>stor_mem_copy</code>.</li>
+  <li><code>align</code> is honoured exactly (power of two).</li>
+</ul>
+
+<h3 id="layer-pci">3.3 <code>stor_pci.c</code></h3>
+
+<p>PCIe config space access, enumeration, and BAR decoding. Three backends:</p>
+
+<table>
+  <thead><tr><th>Backend</th><th>Entry point</th><th>Use</th></tr></thead>
+  <tbody>
+    <tr><td><strong>ECAM</strong></td><td><code>stor_pci_init_ecam(phys, size, bus_start, bus_end)</code></td><td>Primary path — maps the ECAM window once, then all reads/writes are MMIO.</td></tr>
+    <tr><td><strong>Legacy CF8/CFC</strong></td><td><code>stor_pci_init_legacy()</code></td><td>Stub — plain RISC-V has no port I/O. Override via custom vtable if SBI exposes it.</td></tr>
+    <tr><td><strong>Custom</strong></td><td><code>stor_pci_init_custom(ops)</code></td><td>Caller supplies <code>read32/write32</code>; useful for platform bus bridges.</td></tr>
+  </tbody>
+</table>
+
+<p>Public API:</p>
+
+<pre><code><span class="kw">int</span>  stor_pci_read32/16/8(u8 bus, u8 dev, u8 fn, u16 off, ...);
+<span class="kw">int</span>  stor_pci_write32/16/8(u8 bus, u8 dev, u8 fn, u16 off, ...);
+<span class="kw">int</span>  stor_pci_enumerate(u8 class_code, u8 subclass, u8 prog_if,
+                         stor_pci_device_t *out, u32 max, u32 *found);
+<span class="kw">int</span>  stor_pci_get_bar(u8 bus, u8 dev, u8 fn, u8 bar_idx,
+                       stor_pci_bar_t *out);
+<span class="kw">int</span>  stor_pci_enable_mem / busmaster / intx_disable(...);
+<span class="kw">int</span>  stor_pci_find_capability(u8 bus, u8 dev, u8 fn, u8 cap_id, u8 *off);
+<span class="kw">int</span>  stor_pci_find_ext_capability(u8 bus, u8 dev, u8 fn, u16 cap_id, u16 *off);</code></pre>
+
+<div class="warn">
+<span class="label">BAR probing</span>
+<code>stor_pci_get_bar</code> temporarily writes <code>0xFFFFFFFF</code> to the BAR, reads the mask, and restores. The caller <strong>must</strong> ensure no other driver is bound to the device. For 64-bit MEM BARs, the upper half lives at <code>bar_idx + 1</code> — the caller must advance by 2 when iterating.
+</div>
+
+<h3 id="layer-blk">3.4 Unified block layer</h3>
+
+<p>Every device — NVMe namespace, SATA HDD/SSD, AAC logical volume — exposes the same async interface: <code>stor_blk_dev_t</code>.</p>
+
+<pre><code><span class="kw">struct</span> stor_blk_dev {
+    <span class="kw">const char</span> *name, *serial, *model, *fw_rev;
+    u64         capacity_sectors, capacity_bytes;
+    u32         sector_size, physical_block_size, queue_depth;
+    u32         max_transfer_sectors, discard_granularity;
+    <span class="kw">bool</span>        rotational, removable, write_cache;
+    <span class="kw">bool</span>        trim_supported, secure_erase_supported, zoned;
+    u64         zone_size_sectors, zone_count;
+    stor_blk_type_t type;
+    <span class="kw">void</span>       *priv;    <span class="cm">// driver context (namespace/port/ld)</span>
+    <span class="kw">int</span>       (*submit)(stor_blk_dev_t *, stor_blk_req_t *);
+    <span class="kw">int</span>       (*poll)(stor_blk_dev_t *, u32 budget);
+    <span class="kw">int</span>       (*flush_queue)(stor_blk_dev_t *);
+    <span class="kw">int</span>       (*quiesce)(stor_blk_dev_t *);
+    <span class="kw">int</span>       (*resume)(stor_blk_dev_t *);
+    <span class="kw">int</span>       (*get_health)(stor_blk_dev_t *, stor_blk_health_t *);
+    <span class="kw">int</span>       (*get_geometry)(stor_blk_dev_t *, stor_blk_geometry_t *);
+};</code></pre>
+
+<h4>Async submit / completion model</h4>
+
+<pre><code><span class="kw">stor_blk_req_t</span> req = {0};
+req.op       = STOR_BLK_READ;
+req.lba      = 0x10000;
+req.nsect    = 8;
+req.buf      = my_buffer;
+req.cookie   = &my_context;
+req.complete = my_callback;
+
+<span class="kw">int</span> rc = stor_blk_submit(dev, &req);
+<span class="cm">// If rc != STOR_OK, callback already fired with the error.</span>
+<span class="cm">// Otherwise, callback will fire later from stor_blk_poll(dev, budget)</span>
+<span class="cm">// or from the controller's IRQ handler.</span></code></pre>
+
+<div class="note">
+<span class="label">Callback rules</span>
+Completion callbacks run in the caller's context — either from <code>stor_blk_poll</code> or from the IRQ top-half if the controller was wired to MSI-X. They <strong>must not block</strong> and <strong>must not submit</strong> new requests from within the callback.
+</div>
+
+<h4>Sync wrappers</h4>
+
+<p>For boot code, selftests, or diagnostics:</p>
+
+<pre><code><span class="kw">int</span> stor_blk_read_sync(dev, lba, nsect, buf);       <span class="cm">// 30 s timeout</span>
+<span class="kw">int</span> stor_blk_write_sync(dev, lba, nsect, buf);
+<span class="kw">int</span> stor_blk_flush_sync(dev);
+<span class="kw">int</span> stor_blk_discard_sync(dev, lba, nsect);</code></pre>
+
+<p>These spin on <code>stor_blk_poll</code> internally and return the final status. They are not intended for hot I/O.</p>
+
+<!-- ================================================================== -->
+<h2 id="nvme">4. NVMe (1.4c + 2.0)</h2>
+
+<h3 id="nvme-init">4.1 Controller bring-up</h3>
+
+<pre><code><span class="kw">stor_nvme_ctrl_t</span> ctrl;
+<span class="kw">stor_pci_device_t</span> pci = {...};
+
+<span class="cm">// 1. Map BAR0, enable memory + bus master.</span>
+stor_nvme_probe(&amp;pci, &amp;ctrl);
+
+<span class="cm">// 2. Reset, program admin queue, enable, Identify Controller.</span>
+stor_nvme_init(&amp;ctrl);
+
+<span class="cm">// 3. Create I/O queues (CQ + SQ per qid, qid 1..n).</span>
+stor_nvme_create_io_queues(&amp;ctrl, <span class="num">4</span>, <span class="num">128</span>);
+
+<span class="cm">// 4. Enumerate namespaces, build stor_blk_dev_t per NS.</span>
+stor_nvme_scan_namespaces(&amp;ctrl);</code></pre>
+
+<p>Behind the scenes:</p>
+
+<ul>
+  <li><strong>Reset</strong>: <code>CC.EN=0</code>, poll <code>CSTS.RDY==0</code>, timeout from <code>CAP.TO</code> (default 5 s).</li>
+  <li><strong>Admin queue</strong>: 64 entries, page-aligned SQ + CQ. AQA programmed as <code>(depth-1) | ((depth-1)&lt;&lt;16)</code>. ASQ/ACQ written as two 32-bit MMIO accesses.</li>
+  <li><strong>Enable</strong>: <code>CC.EN=1</code>, <code>IOSQES=6</code>, <code>IOCQES=4</code>, <code>MPS=0</code> (4 KiB pages). Poll <code>CSTS.RDY==1</code>.</li>
+  <li><strong>Identify Controller</strong>: CNS=0x01, 4096-byte DMA buffer, parsed into <code>ctrl-&gt;id_ctrl</code>.</li>
+</ul>
+
+<h4>Admin command submission</h4>
+
+<pre><code><span class="kw">int</span> stor_nvme_admin_cmd(<span class="kw">stor_nvme_ctrl_t</span> *ctrl,
+                        <span class="kw">const</span> stor_nvme_sqe_t *sqe,
+                        <span class="kw">stor_nvme_cqe_t</span> *cqe_out,
+                        u32 timeout_ms);</code></pre>
+
+<p>Synchronous by design — admin commands are rare and small. Sequence:</p>
+
+<ol>
+  <li>Copy SQE into the tail slot of the admin SQ, stamp CID = <code>next_cid++</code>.</li>
+  <li>Advance tail, write SQ doorbell.</li>
+  <li>Poll CQ for a CQE with <code>phase == ctrl-&gt;phase</code>.</li>
+  <li>Advance CQ head, ring CQ doorbell. If head wrapped to 0, flip phase.</li>
+  <li>Decode <code>SC/SCT</code> into <code>STOR_ERR_*</code>, return.</li>
+</ol>
+
+<h3 id="nvme-io">4.2 I/O queues and NVM commands</h3>
+
+<p>Per-queue <code>stor_nvme_queue_t</code> holds SQ, CQ, doorbells, head/tail counters, phase bit, and an inflight table of size <code>depth</code>.</p>
+
+<table>
+  <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>sq_head/sq_tail</code></td><td>SQ producer index (host-owned tail, device-owned head)</td></tr>
+    <tr><td><code>cq_head/cq_tail</code></td><td>CQ consumer index (host-owned head, device-owned tail)</td></tr>
+    <tr><td><code>phase</code></td><td>NVMe phase tag — CQE valid iff <code>cqe.status &amp; 1 == phase</code></td></tr>
+    <tr><td><code>inflight</code></td><td>Array of <code>nvme_inflight_ex_t</code>, one per slot; slot index == CID</td></tr>
+    <tr><td><code>prp_slot</code></td><td>PRP list pool slot, -1 if unused</td></tr>
+    <tr><td><code>aux_dma</code></td><td>Transient DMA buffer (DSM ranges, etc.)</td></tr>
+    <tr><td><code>sync_status / sync_done / sync_result</code></td><td>Optional fields for internal synchronous waits</td></tr>
+  </tbody>
+</table>
+
+<h4>PRP builder</h4>
+
+<p>NVMe PRP (Physical Region Page) rules:</p>
+
+<table>
+  <thead><tr><th>Length</th><th>PRP1</th><th>PRP2</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>0</td><td>0</td></tr>
+    <tr><td>≤ 4 KiB (single page)</td><td>buf</td><td>0</td></tr>
+    <tr><td>≤ 8 KiB (two pages)</td><td>buf</td><td>2nd page base</td></tr>
+    <tr><td>&gt; 8 KiB</td><td>buf</td><td>PRP-list page</td></tr>
+  </tbody>
+</table>
+
+<p>This driver caps at a single PRP-list page = 512 entries = <strong>2 MiB per transfer</strong>. Chained PRP lists are rejected with <code>STOR_ERR_RANGE</code>. PRP-list pages come from a per-controller pool of 64 pages allocated during <code>create_io_queues</code>.</p>
+
+<h4>NVM commands</h4>
+
+<table>
+  <thead><tr><th>Opcode</th><th>Name</th><th>Path</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x00</code></td><td>Flush</td><td>async</td></tr>
+    <tr><td><code>0x01</code></td><td>Write</td><td>async</td></tr>
+    <tr><td><code>0x02</code></td><td>Read</td><td>async</td></tr>
+    <tr><td><code>0x05</code></td><td>Compare</td><td>async</td></tr>
+    <tr><td><code>0x08</code></td><td>Write Zeroes</td><td>async</td></tr>
+    <tr><td><code>0x09</code></td><td>Dataset Management (TRIM)</td><td>sync (needs aux DMA)</td></tr>
+    <tr><td><code>0x0C</code></td><td>Verify</td><td>async</td></tr>
+  </tbody>
+</table>
+
+<h3 id="nvme-logs">4.3 Log pages</h3>
+
+<p>All log fetches go through a single chunked helper:</p>
+
+<pre><code><span class="kw">static int</span> nvme_log_xfer(ctrl, lid, lsp, nsid, csi, lsi,
+                        dst, bytes, offset_bytes);</code></pre>
+
+<p>Chunks at 4 KiB (single PRP1 page), supports arbitrary offsets (used by PEL and telemetry), correctly formats <code>NUMD = (dma_bytes - 1) / 4</code>.</p>
+
+<table>
+  <thead><tr><th>LID</th><th>Name</th><th>Function</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x01</code></td><td>Error Information</td><td><code>stor_nvme_get_error_log</code></td></tr>
+    <tr><td><code>0x02</code></td><td>SMART / Health</td><td><code>stor_nvme_get_smart</code></td></tr>
+    <tr><td><code>0x03</code></td><td>Firmware Slot Information</td><td><code>stor_nvme_get_fw_slots</code></td></tr>
+    <tr><td><code>0x04</code></td><td>Changed Namespace List</td><td><code>stor_nvme_get_changed_ns_list</code></td></tr>
+    <tr><td><code>0x05</code></td><td>Command Effects</td><td><code>stor_nvme_get_effects_log</code></td></tr>
+    <tr><td><code>0x07</code></td><td>Telemetry Host-Initiated</td><td><code>stor_nvme_get_telemetry_host</code></td></tr>
+    <tr><td><code>0x08</code></td><td>Telemetry Controller-Initiated</td><td><code>stor_nvme_get_telemetry_ctrl</code></td></tr>
+    <tr><td><code>0x0D</code></td><td>Persistent Event Log</td><td><code>stor_nvme_get_persistent_event_log</code></td></tr>
+  </tbody>
+</table>
+
+<h4>SMART → stor_blk_health_t</h4>
+
+<p>The 512-byte SMART log is parsed into the portable <code>stor_blk_health_t</code> structure. 128-bit counters (<code>data_units_read</code>, etc.) are truncated to low 64 bits — sufficient for any realistic device lifetime.</p>
+
+<h3 id="nvme-zns">4.4 Zoned Namespace (ZNS)</h3>
+
+<p>CSI = 0x02. ZNS-capable namespaces are detected during <code>stor_nvme_scan_namespaces</code> and probed with <code>stor_nvme_zns_probe_ns</code>:</p>
+
+<pre><code><span class="kw">for</span> (u32 i = 0; i &lt; ctrl.namespace_count; i++) {
+    stor_nvme_ns_t *ns = ctrl.ns[i];
+    stor_nvme_zns_probe_ns(ns);   <span class="cm">// sets ns-&gt;zoned, zone_size, zone_count</span>
+}</code></pre>
+
+<h4>Zone descriptor</h4>
+
+<p>64 bytes per zone, matching ZNS 1.1 §4.4:</p>
+
+<pre><code><span class="kw">typedef struct</span> __packed {
+    u8  zone_type;
+    u8  zone_state;
+    u8  zone_attributes;
+    u8  rsvd;
+    u32 zone_capacity;
+    u64 zone_start_lba;
+    u64 write_pointer;
+    u8  zone_descriptor_extension[<span class="num">40</span>];
+} stor_nvme_zns_zone_desc_t;
+<span class="cm">// BUILD_BUG_ON(sizeof(...) != 64)</span></code></pre>
+
+<h4>Zone states</h4>
+
+<table>
+  <thead><tr><th>Value</th><th>Name</th><th>Allowed transitions</th></tr></thead>
+  <tbody>
+    <tr><td>0x01</td><td>EMPTY</td><td>Open / Finish / Reset</td></tr>
+    <tr><td>0x02</td><td>IMPLICIT_OPEN</td><td>Close / Finish / Reset</td></tr>
+    <tr><td>0x03</td><td>EXPLICIT_OPEN</td><td>Close / Finish / Reset / more appends</td></tr>
+    <tr><td>0x04</td><td>CLOSED</td><td>Open / Finish / Reset</td></tr>
+    <tr><td>0x0D</td><td>READ_ONLY</td><td>Reset</td></tr>
+    <tr><td>0x0E</td><td>FULL</td><td>Reset</td></tr>
+    <tr><td>0x0F</td><td>OFFLINE</td><td>Reset (only in some configs)</td></tr>
+  </tbody>
+</table>
+
+<h4>Commands</h4>
+
+<table>
+  <thead><tr><th>Opcode</th><th>Name</th><th>API</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x7A</code></td><td>Zone Management Receive (Report Zones)</td><td><code>stor_nvme_zns_report_zones</code></td></tr>
+    <tr><td><code>0x79</code></td><td>Zone Management Send (Open/Close/Finish/Reset/Offline)</td><td><code>stor_nvme_zns_zone_mgmt</code></td></tr>
+    <tr><td><code>0x7D</code></td><td>Zone Append</td><td><code>stor_nvme_zns_append</code></td></tr>
+  </tbody>
+</table>
+
+<p>Report Zones is chunked at 64 descriptors (4 KiB) per call. Iteration uses <code>last.zone_start_lba + last.zone_capacity</code> as the next start LBA. Zone Append returns the written LBA via <code>CQE.result</code> (low 32 bits — spec limitation for LBA spaces &gt; 2^32).</p>
+
+<div class="note">
+<span class="label">CSI position fix</span>
+NVMe spec places CSI at <code>CDW11[31:24]</code> (byte 47) for Identify commands with CNS ≥ 0x05. The header's <code>stor_nvme_identify_params_t</code> struct is a doc-only convenience; the driver bypasses it and builds CDWs directly to avoid miscompilation of the layout.
+</div>
+
+<h3 id="nvme-ext">4.5 KV, Reservations, Directives, SR-IOV, Multipath</h3>
+
+<h4>Key-Value command set (CSI = 0x01)</h4>
+
+<table>
+  <thead><tr><th>Opcode</th><th>Name</th><th>Function</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x80</code></td><td>KV Store</td><td><code>stor_nvme_kv_store</code></td></tr>
+    <tr><td><code>0x81</code></td><td>KV Retrieve</td><td><code>stor_nvme_kv_retrieve</code> (direct PRP recommended)</td></tr>
+    <tr><td><code>0x82</code></td><td>KV Delete</td><td><code>stor_nvme_kv_delete</code></td></tr>
+    <tr><td><code>0x83</code></td><td>KV List</td><td><code>stor_nvme_kv_list</code></td></tr>
+    <tr><td><code>0x84</code></td><td>KV Exist</td><td><code>stor_nvme_kv_exist</code></td></tr>
+  </tbody>
+</table>
+
+<p>Key (up to 4 KiB) and value (up to 4 KiB) each occupy a single PRP page. Retrieve uses caller's buffer directly as PRP2 to avoid a copy; the pool-based variant is retained as documentation only and returns <code>STOR_ERR_NOT_SUPPORTED</code>.</p>
+
+<h4>Reservations</h4>
+
+<table>
+  <thead><tr><th>Opcode</th><th>Name</th><th>Function</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x0D</code></td><td>Register</td><td><code>stor_nvme_resv_register</code></td></tr>
+    <tr><td><code>0x0E</code></td><td>Acquire</td><td><code>stor_nvme_resv_acquire</code></td></tr>
+    <tr><td><code>0x0F</code></td><td>Release</td><td><code>stor_nvme_resv_release</code></td></tr>
+    <tr><td><code>0x11</code></td><td>Report</td><td><code>stor_nvme_resv_report</code></td></tr>
+  </tbody>
+</table>
+
+<p>Reservation types (per NVMe 1.4c §6.11): Write Exclusive, Exclusive Access, Write Exclusive–Registrants Only, Exclusive Access–Registrants Only, Write Exclusive–All Registrants, Exclusive Access–All Registrants.</p>
+
+<h4>Directives</h4>
+
+<pre><code><span class="kw">int</span> stor_nvme_directive_identify(ctrl, &amp;out);          <span class="cm">// Dir type 0x00</span>
+<span class="kw">int</span> stor_nvme_directive_streams_register(ctrl, sid);   <span class="cm">// Dir type 0x01</span>
+<span class="kw">int</span> stor_nvme_directive_streams_release(ctrl, sid);</code></pre>
+
+<h4>SR-IOV</h4>
+
+<p>PCIe extended capability (ID <code>0x0010</code>) walk, VF enable/disable, per-VF config:</p>
+
+<pre><code><span class="kw">int</span> stor_pci_sriov_probe(bus, dev, fn, &amp;info);
+<span class="kw">int</span> stor_pci_sriov_set_num_vfs(bus, dev, fn, n);
+<span class="kw">int</span> stor_pci_sriov_enable(bus, dev, fn, <span class="kw">true</span>);
+<span class="kw">int</span> stor_pci_sriov_vf_bdf(bus, dev, fn, &amp;info, vf_idx, &amp;b, &amp;d, &amp;f);
+
+<span class="cm">// NVMe wrappers:</span>
+<span class="kw">int</span> stor_nvme_sriov_enable(ctrl, num_vfs);
+<span class="kw">int</span> stor_nvme_sriov_disable(ctrl);
+<span class="kw">int</span> stor_nvme_sriov_configure_vf(ctrl, vf_idx);</code></pre>
+
+<p>VF BDF = <code>PF_BDF + VF_Offset + vf_idx * VF_Stride</code>. The <code>enable</code> path waits for <code>SR-IOV Status.VF_Enabled</code> to match the requested state, with a 500 ms timeout.</p>
+
+<h4>Multipath</h4>
+
+<p>Baseline: detect <code>CAP.CRMS</code> (multi-controller capable). If set, log a warning and return <code>STOR_ERR_NOT_SUPPORTED</code>; full routing requires NVMe-oF fabric registration, which is out of scope. Callers should address each controller independently.</p>
+
+<!-- ================================================================== -->
+<h2 id="ahci">5. AHCI / SATA</h2>
+
+<h3 id="ahci-init">5.1 HBA bring-up</h3>
+
+<pre><code><span class="kw">stor_ahci_hba_t</span> hba;
+stor_ahci_probe(&amp;pci, &amp;hba);      <span class="cm">// BAR5 map, enable mem + busmaster</span>
+stor_ahci_init(&amp;hba);              <span class="cm">// HBA reset, port scan, per-port init</span>
+
+<span class="kw">for</span> (u32 p = 0; p &lt; <span class="num">32</span>; p++) {
+    <span class="kw">if</span> (hba.ports[p].ready)
+        stor_ahci_attach_blk(&amp;hba, p);   <span class="cm">// IDENTIFY -&gt; stor_blk_dev_t</span>
+}</code></pre>
+
+<p>Sequence:</p>
+
+<ol>
+  <li><strong>HBA reset</strong>: <code>GHC.AE=1</code> → <code>GHC.HR=1</code> → poll <code>HR=0</code> → re-assert <code>AE=1</code>.</li>
+  <li><strong>Capability read</strong>: <code>CAP</code>, <code>CAP2</code>, <code>PI</code>. <code>NCS = min(CAP.NCS+1, 32)</code>, <code>NP = CAP.NP+1</code>.</li>
+  <li><strong>Port scan</strong>: for each bit set in <code>PI</code>, run per-port init.</li>
+  <li><strong>Per-port init</strong>: stop engine, check <code>PxSSTS.DET</code>, allocate Cmd List (1 KiB) + FIS (256 B) + 32 Cmd Tables (256 B each), program <code>PxCLB/PxFB</code>, enable interrupts, start engine.</li>
+</ol>
+
+<h4>Port DMA layout</h4>
+
+<table>
+  <thead><tr><th>Region</th><th>Size</th><th>Alignment</th><th>Content</th></tr></thead>
+  <tbody>
+    <tr><td>Command List</td><td>1024 B</td><td>1024 B</td><td>32 × <code>stor_ahci_cmd_header_t</code> (32 B each)</td></tr>
+    <tr><td>FIS Receive</td><td>256 B</td><td>256 B</td><td>D2H FIS from device</td></tr>
+    <tr><td>Command Table</td><td>256 B × 32 tags</td><td>128 B</td><td>CFIS (64 B) + ACMD (32 B) + rsvd (32 B) + 8 × PRDT (16 B)</td></tr>
+  </tbody>
+</table>
+
+<h3 id="ahci-transport">5.2 Transport layer</h3>
+
+<h4>FIS construction</h4>
+
+<p>Register Host-to-Device FIS (20 bytes) is built by <code>ahci_fis_h2d_build</code>:</p>
+
+<pre><code><span class="kw">void</span> ahci_fis_h2d_build(stor_fis_reg_h2d_t *fis,
+                        u8 cmd, u8 device,
+                        u64 lba, u16 count,
+                        u8 features_lo, u8 features_hi, u8 control);</code></pre>
+
+<p>LBA48 is split across <code>lba0..lba5</code>. <code>device</code> is <code>0x40</code> (LBA mode + obsolete LBA bit). <code>icc = 0x80</code> (command flag).</p>
+
+<h4>PRDT builder</h4>
+
+<p>Each PRDT entry describes up to 4 MiB (22-bit <code>DBC</code>). The driver splits a physically contiguous buffer into up to 8 entries (32 MiB per command). Larger transfers return <code>STOR_ERR_RANGE</code>; caller must split at a higher layer.</p>
+
+<h4>Command submission</h4>
+
+<p>All non-NCQ commands use tag 0 (the classic path). NCQ commands allocate the lowest free tag from the 32-bit <code>slot_in_use</code> bitmap. The tag is encoded in <code>FIS.features_lo[7:3]</code> (FPDMA QUEUED requirement).</p>
+
+<pre><code><span class="cm">// NCQ read example</span>
+<span class="kw">u32</span> tag = stor_ctz32(~slot_in_use);   <span class="cm">// lowest free tag</span>
+u8  features = (u8)((tag &amp; <span class="num">0x1F</span>) &lt;&lt; <span class="num">3</span>);
+ahci_issue_cmd(hba, p, tag, prdtl, write=<span class="kw">false</span>);
+<span class="cm">// Sets PxSACT bit (NCQ), then PxCI bit</span></code></pre>
+
+<h4>Completion</h4>
+
+<p>Poll on <code>PxCI</code>. When the tag's bit clears:</p>
+<ul>
+  <li><code>PxTFD.STS.ERR</code> set → <code>STOR_ERR_IO</code></li>
+  <li><code>PxIS.TFES</code> set → <code>STOR_ERR_IO</code></li>
+  <li>Otherwise → <code>STOR_OK</code></li>
+</ul>
+
+<p>On error, the driver clears <code>PxIS</code> and <code>PxSERR</code>, and the caller may invoke <code>ahci_error_recovery</code> (stop → COMRESET → restart).</p>
+
+<h3 id="ahci-extras">5.3 TRIM, SMART, secure erase, recovery</h3>
+
+<h4>TRIM (DATA SET MANAGEMENT)</h4>
+
+<p>ATA command <code>0x06</code>, <code>FEATURES = 0x01</code>. Payload is a list of 8-byte LBA ranges: <code>{ u16 nlb; u16 rsvd; u64 slba; }</code>. Up to 64 ranges per command (512 B payload, 1 PRDT entry).</p>
+
+<pre><code><span class="kw">int</span> stor_ahci_port_trim(hba, port, ranges, range_bytes, ranges_phys);</code></pre>
+
+<h4>SMART</h4>
+
+<p>ATA command <code>0xB0</code> with <code>FEATURES = 0xD0</code>. The ATA signature <code>C2 4F C2</code> is encoded as <code>LBA = 0x4F00C2</code>. Returns 512 bytes of SMART/health data.</p>
+
+<h4>Secure erase</h4>
+
+<p>Two-step protocol:</p>
+<ol>
+  <li><code>SECURITY ERASE PREPARE</code> (0xF3) — no data.</li>
+  <li><code>SECURITY ERASE UNIT</code> (0xF4) — 512-byte payload, first 32 bytes = password. <code>features_lo = 0x02</code> selects enhanced (crypto) erase.</li>
+</ol>
+
+<p>Timeout: 5 minutes (typical full-disk erase).</p>
+
+<h4>Sanitize</h4>
+
+<p>ATA command <code>0xB4</code>. Feature codes: <code>0x00</code> block erase, <code>0x04</code> sanitize (crypto erase on SED). Timeout: 5 minutes.</p>
+
+<h4>Error recovery</h4>
+
+<p>On any I/O error or timeout, the driver executes:</p>
+
+<pre><code>port_stop -&gt; clear PxSERR + PxIS -&gt; COMRESET -&gt; port_start</code></pre>
+
+<p>Caller's request fails with <code>STOR_ERR_IO</code>; retry policy is caller's responsibility.</p>
+
+<!-- ================================================================== -->
+<h2 id="aac">6. AAC / AACRAID</h2>
+
+<p>Adaptec / PMC RAID controllers. Match: PCI class <code>0x01</code>, subclass <code>0x04</code> (RAID).</p>
+
+<h4>Mailbox interface</h4>
+
+<p>MMIO registers at BAR0:</p>
+
+<table>
+  <thead><tr><th>Offset</th><th>Name</th><th>Width</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x00</code></td><td>MAILBOX_CMD</td><td>u32 (write command opcode)</td></tr>
+    <tr><td><code>0x04</code></td><td>MAILBOX_STATUS</td><td>u32 (BUSY / OK / ERROR)</td></tr>
+    <tr><td><code>0x20</code></td><td>MAILBOX_DATA</td><td>8 × u32 (32 B arguments)</td></tr>
+  </tbody>
+</table>
+
+<p>Mailbox submission: load 8 argument bytes → set BUSY → write command → poll BUSY clear → check ERROR → read result.</p>
+
+<h4>Init sequence</h4>
+
+<ol>
+  <li><strong>Reset</strong>: mailbox <code>0x0E</code> (RESET_ADAPTER).</li>
+  <li><strong>Get info</strong>: mailbox <code>0x0A</code> (GET_CTLR_INFO). Real firmware returns a FIB with adapter details; baseline stubs the response with fixed values.</li>
+  <li><strong>FIB queue</strong>: allocate 64 × 512 B DMA block. Each FIB is one outstanding request.</li>
+</ol>
+
+<h4>FIB structure</h4>
+
+<p>FIB (Fibre Information Block) — 512 bytes total, packed:</p>
+
+<pre><code><span class="kw">typedef struct</span> __packed {
+    u32 cmd;        <span class="cm">// AAC_CMD_xxx</span>
+    u32 flags;      <span class="cm">// bit 0 async, bits 1-2 data direction</span>
+    u32 size;       <span class="cm">// data payload size in bytes</span>
+    u32 sgl_number; <span class="cm">// SGL entry count</span>
+    u32 lba;        <span class="cm">// starting LBA</span>
+    u32 handle;     <span class="cm">// LD or PD handle</span>
+    u32 count;      <span class="cm">// sector count</span>
+    u32 rsvd[8];
+} stor_aac_fib_header_t;   <span class="cm">// 64 bytes</span>
+
+<span class="kw">typedef struct</span> __packed {
+    u64 sgl_addr;
+    u32 sgl_length;
+    u32 sgl_flags;
+} stor_aac_sgl_t;          <span class="cm">// 16 bytes each</span></code></pre>
+
+<h4>LD I/O</h4>
+
+<p>READ_64 (<code>0x04</code>) / WRITE_64 (<code>0x05</code>) via FIB, 512-byte sectors, 64-bit LBA. Single SGL entry per command. Submission is synchronous (mailbox 0x11 returns OK = accepted).</p>
+
+<h4>PD SMART passthrough</h4>
+
+<p>SCSI ATA PASS-THROUGH (16) CDB <code>0x85</code> via FIB:</p>
+
+<table>
+  <thead><tr><th>CDB byte</th><th>Value</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>[0]</td><td>0x85</td><td>ATA PASS-THROUGH (16)</td></tr>
+    <tr><td>[1]</td><td>(2 &lt;&lt; 1)</td><td>BYT_BLOK = 2 (block)</td></tr>
+    <tr><td>[2]</td><td>0x2E</td><td>CK_COND=1, T_DIR=1, T_LENGTH=2</td></tr>
+    <tr><td>[14]</td><td>0xB0</td><td>ATA SMART command</td></tr>
+    <tr><td>[15]</td><td>0xD0</td><td>SMART READ DATA feature</td></tr>
+  </tbody>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="cpp">7. C++ wrapper</h2>
+
+<p>Header-only C++17 layer over the C API. Zero exceptions, zero allocation on hot path.</p>
+
+<h4>Core types</h4>
+
+<pre><code><span class="kw">enum class</span> stor::cpp::Error { Ok, Generic, Timeout, Invalid, ... };
+<span class="kw">constexpr</span> Error      to_error(<span class="kw">int</span> rc);
+<span class="kw">constexpr</span> string_view to_string(Error);
+
+<span class="kw">template</span> &lt;<span class="kw">typename</span> T&gt; <span class="kw">class</span> [[nodiscard]] Result;
+<span class="kw">template</span> &lt;&gt;             <span class="kw">class</span> [[nodiscard]] Result&lt;<span class="kw">void</span>&gt;;
+
+<span class="kw">struct</span> Geometry;   <span class="cm">// POD, from stor_blk_geometry_t</span>
+<span class="kw">struct</span> Health;     <span class="cm">// POD, from stor_blk_health_t</span></code></pre>
+
+<h4>Device handle</h4>
+
+<pre><code><span class="kw">class</span> BlockDevice {
+    stor_blk_dev_t *dev_;
+<span class="kw">public</span>:
+    <span class="cm">// Identity</span>
+    string_view  name(), serial(), model();
+    stor_blk_type_t type();
+
+    <span class="cm">// Geometry</span>
+    u64 capacity_sectors(), capacity_bytes();
+    u32 sector_size(), max_transfer_sectors(), queue_depth();
+    <span class="kw">bool</span> rotational(), removable(), trim_supported(), zoned();
+
+    <span class="cm">// Sync I/O</span>
+    Result&lt;<span class="kw">void</span>&gt; read_sync(lba, nsect, buf);
+    Result&lt;<span class="kw">void</span>&gt; write_sync(lba, nsect, buf);
+    Result&lt;<span class="kw">void</span>&gt; flush_sync();
+    Result&lt;<span class="kw">void</span>&gt; discard_sync(lba, nsect);
+
+    <span class="cm">// Async I/O</span>
+    Result&lt;<span class="kw">void</span>&gt; submit(stor_blk_req_t *req);
+    u32         poll(u32 budget);
+
+    <span class="cm">// Snapshots</span>
+    Result&lt;Geometry&gt; geometry() <span class="kw">const</span>;
+    Result&lt;Health&gt;   health()   <span class="kw">const</span>;
+};</code></pre>
+
+<h4>Controllers (RAII)</h4>
+
+<pre><code><span class="kw">class</span> NvmeController {
+<span class="kw">public</span>:
+    Result&lt;<span class="kw">void</span>&gt; bring_up(pci, io_queues=<span class="num">4</span>, io_depth=<span class="num">128</span>);
+    Result&lt;<span class="kw">void</span>&gt; shutdown(<span class="kw">bool</span> notify = <span class="kw">true</span>);
+    Result&lt;<span class="kw">void</span>&gt; smart_log(stor_nvme_smart_log_t&amp;);
+    Result&lt;<span class="kw">void</span>&gt; error_log(entries, n);
+    Result&lt;<span class="kw">void</span>&gt; fw_slots(stor_nvme_fw_slot_log_t&amp;);
+
+    span&lt;stor_nvme_ns_t *<span class="kw">const</span>&gt; namespaces();
+    BlockDevice              namespace_device(nsid);
+    <span class="kw">bool</span>                     ready();
+};
+
+<span class="kw">class</span> AhciController {
+<span class="kw">public</span>:
+    Result&lt;<span class="kw">void</span>&gt; bring_up(pci);    <span class="cm">// auto-attaches ports</span>
+    Result&lt;<span class="kw">void</span>&gt; shutdown();
+    u32         port_count();
+    BlockDevice port_device(port);
+};
+
+<span class="kw">class</span> AacController {
+<span class="kw">public</span>:
+    Result&lt;<span class="kw">void</span>&gt; bring_up(pci);
+    Result&lt;<span class="kw">void</span>&gt; shutdown();
+    u32         ld_count();
+    BlockDevice ld_device(idx);
+};</code></pre>
+
+<h4>Orchestration</h4>
+
+<pre><code><span class="kw">class</span> StorageManager {
+<span class="kw">public</span>:
+    <span class="kw">struct</span> Config {
+        u16 nvme_io_queues = <span class="num">4</span>;
+        u16 nvme_io_depth  = <span class="num">128</span>;
+        <span class="kw">bool</span> bring_up_nvme = <span class="kw">true</span>;
+        <span class="kw">bool</span> bring_up_ahci = <span class="kw">true</span>;
+        <span class="kw">bool</span> bring_up_aac  = <span class="kw">true</span>;
+        usize max_devices  = <span class="num">64</span>;
+    };
+
+    Result&lt;<span class="kw">void</span>&gt; bring_up(<span class="kw">const</span> Config&amp; = {});
+    Result&lt;<span class="kw">void</span>&gt; shutdown();
+
+    NvmeController&amp; nvme();
+    AhciController&amp; ahci();
+    AacController&amp;  aac();
+
+    DeviceRange devices() <span class="kw">const</span>;
+    usize       device_count() <span class="kw">const</span>;
+    BlockDevice *find(string_view name);
+
+    <span class="kw">void</span> set_on_device_add(cb, ctx);
+    <span class="kw">void</span> set_on_device_remove(cb, ctx);
+    <span class="kw">void</span> set_on_error(cb, ctx);
+
+    u32           poll_all(u32 budget_each = <span class="num">16</span>);
+    Result&lt;<span class="kw">void</span>&gt; health_check_all(Health *out, usize cap, usize *got);
+};</code></pre>
+
+<h4>Async I/O helper</h4>
+
+<pre><code><span class="kw">struct</span> IoCompletionContext {
+    <span class="kw">void</span> (*fn)(<span class="kw">void</span> *user, <span class="kw">int</span> status) <span class="kw">noexcept</span>;
+    <span class="kw">void</span> *user;
+};
+
+<span class="kw">void</span> fill_read_req(stor_blk_req_t&amp; req, lba, nsect, buf, sector_size, ctx);
+<span class="kw">void</span> fill_write_req(stor_blk_req_t&amp; req, lba, nsect, buf, sector_size, ctx);</code></pre>
+
+<p>Usage:</p>
+
+<pre><code><span class="kw">auto</span> dev = mgr.find(<span class="str">"nvme0n1"</span>);
+<span class="kw">stor_blk_req_t</span> req;
+IoCompletionContext ctx = { my_callback, &amp;my_state };
+
+fill_read_req(req, <span class="num">0</span>, <span class="num">8</span>, buffer, <span class="num">512</span>, ctx);
+dev-&gt;submit(&amp;req);
+<span class="cm">// callbacks fire from dev-&gt;poll() or from IRQ handler</span></code></pre>
+
+<!-- ================================================================== -->
+<h2 id="selftest">8. Selftest framework</h2>
+
+<p>Thirteen tests: nine software-only vectors plus four hardware checks. Entry point:</p>
+
+<pre><code><span class="kw">void</span> stor_selftest_set_hw_context(<span class="kw">stor_hw_context_t</span> *ctx);
+<span class="kw">int</span>  stor_selftest_run_all(<span class="kw">void</span>);
+<span class="kw">int</span>  stor_selftest_run_by_name(<span class="kw">const char</span> *name);
+<span class="kw">void</span> stor_selftest_list(<span class="kw">void</span>);</code></pre>
+
+<table>
+  <thead><tr><th>Name</th><th>HW?</th><th>Verifies</th></tr></thead>
+  <tbody>
+    <tr><td><code>helpers</code></td><td>—</td><td>Bit ops, bswap, alignment, CRC16</td></tr>
+    <tr><td><code>ring_math</code></td><td>—</td><td>Ring index wraparound</td></tr>
+    <tr><td><code>fis_h2d</code></td><td>—</td><td>FIS H2D layout, LBA48 split, ICC</td></tr>
+    <tr><td><code>prdt</code></td><td>—</td><td>PRDT splitting at 4 MiB boundary</td></tr>
+    <tr><td><code>nvme_cqe</code></td><td>—</td><td>SC / SCT / phase extraction</td></tr>
+    <tr><td><code>nvme_prp</code></td><td>—</td><td>PRP page math (page crossing)</td></tr>
+    <tr><td><code>zns_desc</code></td><td>—</td><td>Zone descriptor size == 64 B</td></tr>
+    <tr><td><code>aac_fib</code></td><td>—</td><td>FIB size == 512 B</td></tr>
+    <tr><td><code>constants</code></td><td>—</td><td>Register offsets, struct sizes</td></tr>
+    <tr><td><code>nvme_probe</code></td><td>✓</td><td>Controller alive: VS readable, CSTS.RDY=1, no CFS</td></tr>
+    <tr><td><code>nvme_id</code></td><td>✓</td><td>Identify Controller parses: VID, NN, SQES=0x66, CQES=0x44</td></tr>
+    <tr><td><code>ahci_probe</code></td><td>✓</td><td>HBA present, PI non-zero, GHC.AE=1</td></tr>
+    <tr><td><code>ahci_id</code></td><td>✓</td><td>ATA IDENTIFY DEVICE on all ready ports</td></tr>
+  </tbody>
+</table>
+
+<p>Hardware tests are skipped with <code>STOR_ERR_NOT_SUPPORTED</code> when <code>stor_hw_context_t</code> is not set. No test requires a controller to be present.</p>
+
+<!-- ================================================================== -->
+<h2 id="errors">9. Error codes</h2>
+
+<table>
+  <thead><tr><th>Macro</th><th>Value</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>STOR_OK</code></td><td>0</td><td>Success</td></tr>
+    <tr><td><code>STOR_ERR_GENERIC</code></td><td>-1</td><td>Unspecified error</td></tr>
+    <tr><td><code>STOR_ERR_TIMEOUT</code></td><td>-2</td><td>Operation timed out</td></tr>
+    <tr><td><code>STOR_ERR_INVAL</code></td><td>-3</td><td>Invalid argument</td></tr>
+    <tr><td><code>STOR_ERR_NOMEM</code></td><td>-4</td><td>Out of memory</td></tr>
+    <tr><td><code>STOR_ERR_BUSY</code></td><td>-5</td><td>Resource busy (queue full)</td></tr>
+    <tr><td><code>STOR_ERR_NOT_SUPPORTED</code></td><td>-6</td><td>Feature not implemented or unsupported by device</td></tr>
+    <tr><td><code>STOR_ERR_PROTOCOL</code></td><td>-7</td><td>Protocol violation (bad response)</td></tr>
+    <tr><td><code>STOR_ERR_NO_DEVICE</code></td><td>-8</td><td>Device not present</td></tr>
+    <tr><td><code>STOR_ERR_IO</code></td><td>-9</td><td>I/O error (media, transport, or device fault)</td></tr>
+    <tr><td><code>STOR_ERR_CHECKSUM</code></td><td>-10</td><td>Checksum mismatch</td></tr>
+    <tr><td><code>STOR_ERR_NOT_READY</code></td><td>-11</td><td>Device not ready (init incomplete)</td></tr>
+    <tr><td><code>STOR_ERR_ABORTED</code></td><td>-12</td><td>Operation aborted by device</td></tr>
+    <tr><td><code>STOR_ERR_RANGE</code></td><td>-13</td><td>LBA or length out of range</td></tr>
+    <tr><td><code>STOR_ERR_PERM</code></td><td>-14</td><td>Permission / reservation conflict</td></tr>
+  </tbody>
+</table>
+
+<h4>NVMe status mapping</h4>
+
+<table>
+  <thead><tr><th>NVMe SC</th><th>STOR_ERR</th></tr></thead>
+  <tbody>
+    <tr><td>0x00 (Success)</td><td><code>STOR_OK</code></td></tr>
+    <tr><td>0x01 (Invalid Opcode)</td><td><code>STOR_ERR_INVAL</code></td></tr>
+    <tr><td>0x02 (Invalid Field)</td><td><code>STOR_ERR_INVAL</code></td></tr>
+    <tr><td>0x0B (Invalid NS)</td><td><code>STOR_ERR_INVAL</code></td></tr>
+    <tr><td>0x07/0x08 (Abort)</td><td><code>STOR_ERR_ABORTED</code></td></tr>
+    <tr><td>0x17 (LBA Out of Range)</td><td><code>STOR_ERR_RANGE</code></td></tr>
+    <tr><td>0x18 (Capacity Exceeded)</td><td><code>STOR_ERR_RANGE</code></td></tr>
+    <tr><td>0x19 (NS Not Ready)</td><td><code>STOR_ERR_NOT_READY</code></td></tr>
+    <tr><td>Other SCT=0</td><td><code>STOR_ERR_IO</code></td></tr>
+    <tr><td>SCT≠0 (NVM/vendor)</td><td><code>STOR_ERR_IO</code></td></tr>
+  </tbody>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="regmaps">10. Register maps</h2>
+
+<h4>NVMe BAR0</h4>
+
+<table>
+  <thead><tr><th>Offset</th><th>Name</th><th>Width</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>0x0000</td><td>CAP</td><td>u64</td><td>MQES, CQR, TO, DSTRD, MPSMIN/MAX</td></tr>
+    <tr><td>0x0008</td><td>VS</td><td>u32</td><td>Version register</td></tr>
+    <tr><td>0x000C</td><td>INTMS</td><td>u32</td><td>Interrupt mask set</td></tr>
+    <tr><td>0x0010</td><td>INTMC</td><td>u32</td><td>Interrupt mask clear</td></tr>
+    <tr><td>0x0014</td><td>CC</td><td>u32</td><td>EN, CSS, MPS, AMS, SHN, IOSQES, IOCQES</td></tr>
+    <tr><td>0x001C</td><td>CSTS</td><td>u32</td><td>RDY, CFS, SHST, NSSRO, PP</td></tr>
+    <tr><td>0x0024</td><td>AQA</td><td>u32</td><td>Admin queue attributes (ASQS | ACQS&lt;&lt;16)</td></tr>
+    <tr><td>0x0028</td><td>ASQ</td><td>u64</td><td>Admin SQ base</td></tr>
+    <tr><td>0x0030</td><td>ACQ</td><td>u64</td><td>Admin CQ base</td></tr>
+    <tr><td>0x1000</td><td>DBS</td><td>—</td><td>Doorbell base; SQ n at 0x1000 + 2n*stride; CQ n at +stride</td></tr>
+  </tbody>
+</table>
+
+<p>Doorbell stride = <code>4 &lt;&lt; CAP.DSTRD</code>.</p>
+
+<h4>AHCI ABAR</h4>
+
+<table>
+  <thead><tr><th>Offset</th><th>Name</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>0x0000</td><td>CAP</td><td>NCS, NP, S64A, SNCQ, etc.</td></tr>
+    <tr><td>0x0004</td><td>GHC</td><td>HR, IE, AE</td></tr>
+    <tr><td>0x0008</td><td>IS</td><td>Global interrupt status</td></tr>
+    <tr><td>0x000C</td><td>PI</td><td>Ports implemented bitmap</td></tr>
+    <tr><td>0x0010</td><td>VS</td><td>AHCI version</td></tr>
+    <tr><td>0x0024</td><td>CAP2</td><td>Extended capabilities</td></tr>
+    <tr><td>0x0028</td><td>BOHC</td><td>BIOS/OS handoff</td></tr>
+  </tbody>
+</table>
+
+<p>Port register block: <code>0x100 + port * 0x80</code>. Fields include CLB, FB, IS, IE, CMD, TFD, SIG, SSTS, SCTL, SERR, SACT, CI, SNTF, DEVSLP, VS.</p>
+
+<h4>AAC BAR0</h4>
+
+<table>
+  <thead><tr><th>Offset</th><th>Name</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>0x00</td><td>MAILBOX_CMD</td><td>Write command opcode</td></tr>
+    <tr><td>0x04</td><td>MAILBOX_STATUS</td><td>BUSY / OK / ERROR</td></tr>
+    <tr><td>0x20</td><td>MAILBOX_DATA[8]</td><td>32 bytes of argument / result</td></tr>
+  </tbody>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="structs">11. Protocol structures</h2>
+
+<h4>NVMe SQE (64 B)</h4>
+
+<table>
+  <thead><tr><th>Offset</th><th>Field</th><th>Width</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>opcode</td><td>u8</td></tr>
+    <tr><td>1</td><td>flags (FUSE, PSDT)</td><td>u8</td></tr>
+    <tr><td>2</td><td>cid</td><td>u16</td></tr>
+    <tr><td>4</td><td>nsid</td><td>u32</td></tr>
+    <tr><td>8</td><td>cdw2, cdw3</td><td>u32 ×2</td></tr>
+    <tr><td>16</td><td>mptr</td><td>u64</td></tr>
+    <tr><td>24</td><td>dptr.prp1 / sgl</td><td>u64</td></tr>
+    <tr><td>32</td><td>dptr.prp2 / sgl_len</td><td>u64</td></tr>
+    <tr><td>40</td><td>cdw10..cdw15</td><td>u32 ×6</td></tr>
+  </tbody>
+</table>
+
+<h4>NVMe CQE (16 B)</h4>
+
+<table>
+  <thead><tr><th>Offset</th><th>Field</th><th>Width</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>result</td><td>u32</td></tr>
+    <tr><td>4</td><td>rsvd</td><td>u32</td></tr>
+    <tr><td>8</td><td>sq_head</td><td>u16</td></tr>
+    <tr><td>10</td><td>sq_id</td><td>u16</td></tr>
+    <tr><td>12</td><td>cid</td><td>u16</td></tr>
+    <tr><td>14</td><td>status (P[0], SC[8:1], SCT[11:9], DNR[14], M[15])</td><td>u16</td></tr>
+  </tbody>
+</table>
+
+<h4>AHCI Command Header (32 B)</h4>
+
+<table>
+  <thead><tr><th>Offset</th><th>Field</th><th>Width</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>cfl (CFL[4:0], A[5], W[6], P[7])</td><td>u8</td></tr>
+    <tr><td>1</td><td>flags (R, B, C, PMP)</td><td>u8</td></tr>
+    <tr><td>2</td><td>prdtl</td><td>u16</td></tr>
+    <tr><td>4</td><td>prdbc</td><td>u32</td></tr>
+    <tr><td>8</td><td>ctba</td><td>u64</td></tr>
+    <tr><td>16</td><td>ctbau</td><td>u32</td></tr>
+    <tr><td>20</td><td>rsvd</td><td>u32 ×3</td></tr>
+  </tbody>
+</table>
+
+<h4>AHCI Command Table (256 B)</h4>
+
+<p>Header (128 B): CFIS (64 B, Register H2D FIS) + ACMD (32 B) + reserved (32 B). Then 8 × PRDT (16 B each).</p>
+
+<h4>AHCI PRDT entry (16 B)</h4>
+
+<table>
+  <thead><tr><th>Offset</th><th>Field</th><th>Width</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>dba (data base address)</td><td>u64</td></tr>
+    <tr><td>8</td><td>rsvd</td><td>u32</td></tr>
+    <tr><td>12</td><td>DBC[21:0] | I[31]</td><td>u32</td></tr>
+  </tbody>
+</table>
+
+<h4>SATA FIS Register H2D (20 B)</h4>
+
+<table>
+  <thead><tr><th>Offset</th><th>Field</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>fis_type = 0x27</td></tr>
+    <tr><td>1</td><td>pmport (bits 7:4), rsvd</td></tr>
+    <tr><td>2</td><td>command</td></tr>
+    <tr><td>3</td><td>featurel</td></tr>
+    <tr><td>4..9</td><td>lba0..lba5 (LBA48)</td></tr>
+    <tr><td>10</td><td>device</td></tr>
+    <tr><td>11</td><td>featureh</td></tr>
+    <tr><td>12..13</td><td>countl, counth</td></tr>
+    <tr><td>14</td><td>icc</td></tr>
+    <tr><td>15</td><td>control</td></tr>
+    <tr><td>16..19</td><td>rsvd</td></tr>
+  </tbody>
+</table>
+
+<h4>ZNS Zone Descriptor (64 B)</h4>
+
+<table>
+  <thead><tr><th>Offset</th><th>Field</th><th>Width</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>zone_type (ZNS type in bits 7:4)</td><td>u8</td></tr>
+    <tr><td>1</td><td>zone_state (bits 3:0)</td><td>u8</td></tr>
+    <tr><td>2</td><td>zone_attributes</td><td>u8</td></tr>
+    <tr><td>4</td><td>zone_capacity (LBAs)</td><td>u32</td></tr>
+    <tr><td>8</td><td>zone_start_lba</td><td>u64</td></tr>
+    <tr><td>16</td><td>write_pointer</td><td>u64</td></tr>
+    <tr><td>24</td><td>zone_descriptor_extension</td><td>u8[40]</td></tr>
+  </tbody>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="integration">12. Build &amp; integration</h2>
+
+<h4>Source files</h4>
+
+<table>
+  <thead><tr><th>File</th><th>Language</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td><code>stor_mmio.h</code></td><td>C11 (header)</td><td>Foundation: MMIO, atomics, CSR, CRC</td></tr>
+    <tr><td><code>stor_mm.h</code></td><td>C11 (header)</td><td>Memory vtable interface</td></tr>
+    <tr><td><code>stor_mm.c</code></td><td>C11</td><td>Delegation to kernel vtable</td></tr>
+    <tr><td><code>stor_pci.c</code></td><td>C11</td><td>PCIe enumeration</td></tr>
+    <tr><td><code>storage_core.h</code></td><td>C11 (header)</td><td>Public C API + all protocol structures</td></tr>
+    <tr><td><code>storage_core.c</code></td><td>C11</td><td>NVMe + AHCI + AAC + block layer implementation</td></tr>
+    <tr><td><code>storage_controller.hpp</code></td><td>C++17 (header)</td><td>RAII + Result&lt;T&gt; wrapper</td></tr>
+    <tr><td><code>storage_controller.cpp</code></td><td>C++17</td><td><code>extern "C"</code> callback trampoline</td></tr>
+    <tr><td><code>storage_selftest.c</code></td><td>C11</td><td>Test harness (already included at end of <code>storage_core.c</code> in this build)</td></tr>
+  </tbody>
+</table>
+
+<h4>Compile flags (suggested)</h4>
+
+<pre><code>-std=c11 -march=rv64gc -mabi=lp64d -mcmodel=medany
+-O2 -Wall -Wextra -Wno-unused-parameter
+-ffreestanding -fno-common -fno-builtin
+-nostdlib -fno-exceptions -fno-rtti
+
+<span class="cm"># timebase override if not 1 MHz:</span>
+-DSTOR_TIMEBASE_HZ=10000000</code></pre>
+
+<h4>Integration steps</h4>
+
+<ol>
+  <li><strong>Implement <code>stor_mm_ops_t</code></strong> in the kernel: <code>alloc_dma</code>, <code>free_dma</code>, <code>map_mmio</code>, <code>unmap_mmio</code>, <code>phys_to_virt</code>, <code>virt_to_phys</code>, <code>kmalloc_aligned</code>, <code>kfree_aligned</code>.</li>
+  <li><strong>Call <code>stor_mm_init(&amp;ops)</code></strong> early in boot.</li>
+  <li><strong>Call <code>stor_pci_init_ecam(phys, size, 0, 255)</code></strong> with the platform's ECAM base. Or <code>stor_pci_init_custom</code> if using a non-standard bridge.</li>
+  <li><strong>Call <code>stor_log_fn = your_log_function</code></strong> so driver output reaches the kernel log.</li>
+  <li><strong>Call <code>stor_selftest_run_all()</code></strong> (with <code>stor_selftest_set_hw_context(&amp;ctx)</code> if hardware is present) to validate the setup.</li>
+  <li><strong>Instantiate controllers:</strong> either manually (<code>stor_nvme_probe</code> + <code>stor_nvme_init</code> etc.) or via <code>stor::cpp::StorageManager::bring_up()</code>.</li>
+</ol>
+
+<h4>MSI-X / IRQ wiring (out of scope of this driver)</h4>
+
+<p>The driver is <strong>polling-only</strong> in this baseline. To enable interrupts:</p>
+
+<ol>
+  <li>Add MSI-X capability walk to <code>stor_pci.c</code>.</li>
+  <li>Program MSI-X table entries to point at your platform's interrupt controller.</li>
+  <li>Install an IRQ handler that calls <code>stor_nvme_poll_completions(ctrl, qid, budget)</code> (NVMe) or <code>stor_blk_poll(dev, budget)</code> (unified layer).</li>
+  <li>For AHCI: the driver already programs <code>PxIE</code>; add <code>stor_ahci_poll_port(hba, port)</code> in the IRQ top-half.</li>
+</ol>
+
+<!-- ================================================================== -->
+<h2 id="limitations">13. Known limitations</h2>
+
+<table>
+  <thead><tr><th>Area</th><th>Limitation</th><th>Workaround</th></tr></thead>
+  <tbody>
+    <tr><td>NVMe PRP</td><td>Single PRP list page = 2 MiB max transfer</td><td>Split at higher layer, or extend <code>nvme_build_prps</code> to chain</td></tr>
+    <tr><td>NVMe I/O</td><td>One thread per queue assumed</td><td>External lock in caller, or use <code>store_blk_submit</code> from a single context</td></tr>
+    <tr><td>NVMe IRQ</td><td>No MSI-X programming</td><td>Poll-only baseline; add MSI-X cap in <code>stor_pci.c</code></td></tr>
+    <tr><td>NVMe-oF</td><td>Not implemented</td><td>Out of scope; PCIe only</td></tr>
+    <tr><td>NVMe multipath</td><td>Detected, not routed</td><td>Fabric-only; caller addresses each controller</td></tr>
+    <tr><td>NVMe ZNS SET_ZDE</td><td>Not implemented (requires payload)</td><td>Direct <code>stor_nvme_zns_zone_mgmt</code> with <code>ZMS_SET_ZONE_DESC</code> returns <code>NOT_SUPPORTED</code></td></tr>
+    <tr><td>NVMe KV Retrieve pool variant</td><td><code>NOT_SUPPORTED</code> (data would land in pool page)</td><td>Use direct-PRP retrieve path (recommended)</td></tr>
+    <tr><td>AHCI NCQ</td><td>No true async submission — tags used for overlap only</td><td>Synchronous one-shot API</td></tr>
+    <tr><td>AHCI port multiplier</td><td>Not supported</td><td><code>STOR_ERR_NOT_SUPPORTED</code></td></tr>
+    <tr><td>AHCI ATAPI</td><td>Detected but not driven</td><td>HDD/SSD only</td></tr>
+    <tr><td>AHCI TRIM</td><td>Up to 64 ranges per command</td><td>Split larger requests at higher layer</td></tr>
+    <tr><td>AAC</td><td>Baseline: 1 LD enumerated, fixed 1 TiB geometry</td><td>Extend <code>stor_aac_scan_devices</code> with real QUERY_DEV/GET_DEV_INFO</td></tr>
+    <tr><td>AAC FIB submission</td><td>Synchronous (mailbox returns OK = accepted)</td><td>Real async completion requires adapter completion queue wiring</td></tr>
+    <tr><td>AAC LD health</td><td><code>NOT_SUPPORTED</code></td><td>LD-level SMART requires PD enumeration (planned)</td></tr>
+    <tr><td>Block layer async</td><td>AHCI and AAC submit paths are synchronous</td><td>Callback fires inline before <code>submit</code> returns</td></tr>
+    <tr><td>DMA direction detection</td><td><code>nvme_admin_data_cmd</code> infers direction from <code>sqe.flags &amp; (1&lt;&lt;1)</code></td><td>Explicit direction flag for callers using this helper</td></tr>
+  </tbody>
+</table>
+
+<h4>Planned extensions</h4>
+
+<ul>
+  <li>MSI-X capability discovery + vector programming (per-controller)</li>
+  <li>Chained PRP lists (unlimited transfer size)</li>
+  <li>Async FIB completion for AAC</li>
+  <li>Port multiplier support for AHCI</li>
+  <li>NVMe-oF (TCP transport subset)</li>
+  <li>NVMe Telemetry 2.0 (LID 0x09)</li>
+  <li>NVMe Namespace Management (Create/Delete NS)</li>
+  <li>Persistent event log event iteration (opcode header parsing)</li>
+</ul>
+
+</main>
+
+<footer>
+  CoTanOS Storage Core &middot; Technical Reference v1.0 &middot; RISC-V RV32/RV64 &middot; C11 / C++17
+</footer>
+
+</body>
+</html>
