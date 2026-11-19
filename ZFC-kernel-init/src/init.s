@@ -1,19 +1,27 @@
-# init.s – pierwszy kod jądra w trybie S (OpenSBI entry)
+# init.S - S-mode entry from OpenSBI. Boot hart is NOT guaranteed to be 0.
+.section .data
+.align 3
+.globl g_boot_elect
+g_boot_elect:
+    .word 0
+.globl g_init_done
+g_init_done:
+    .word 0
+
 .section .text.init
 .globl _start_kernel
-
 _start_kernel:
-    csrw    sie, zero               # S-mode: żadnych przerwań na czas init
-    mv      s0, a0                  # s0 = hartid (z OpenSBI/DTB)
-    
-    # Hart 0 robi pełną inicjalizację, inne harty przeskakują do .Lsecondary_init
-    bnez    s0, .Lsecondary_init
+    csrw    sie, zero
+    mv      s0, a0                  # s0 = hartid
 
-# =============================================================================
-# HART 0 (Boot CPU)
-# =============================================================================
-.Lprimary_init:
-    # 1. Wyzeruj BSS (tylko hart 0)
+    # Elect exactly one primary hart. .data is loaded by the ELF loader,
+    # so this flag is valid before BSS is cleared.
+    la      t0, g_boot_elect
+    li      t1, 1
+    amoswap.w.aq t2, t1, (t0)
+    bnez    t2, .Lsecondary_wait
+
+.Lprimary:
     la      t0, __bss_start
     la      t1, __bss_end
 .Lbss_loop:
@@ -22,43 +30,37 @@ _start_kernel:
     addi    t0, t0, 8
     j       .Lbss_loop
 .Lbss_done:
-
-    # 2. Stos jądra dla hartu 0
     la      sp, _kernel_stack_top
-
-    # 3. Centrum globalne (ustawia tp)
-    li      a0, 0                   # hartid = 0
-    li      a1, 0                   # dtb = 0 (na razie)
+    li      a0, 0                   # cotan_global_init requires hart 0
+    li      a1, 0                   # dtb (unused for now)
     call    cotan_global_init
-
-    # 4. C-kod jądra (PMM, VM, Scheduler start)
-    li      a0, 0
-    call    kernel_main             # nigdy nie wraca (woła sched_start)
-
-# =============================================================================
-# HART 1+ (Secondary CPUs)
-# =============================================================================
-.Lsecondary_init:
-    # DEBUG: Natychmiastowy marker, że Hart 1 się obudził
-    li      t0, 0x10000000        # UART0 base
-    li      t1, '1'               # znak '1'
-    li      t2, 'B'               # znak 'B' (jak Boot)
-    sb      t1, 0(t0)             # wypisz '1'
-    sb      t2, 0(t0)             # wypisz 'B'
     
-    # 1. Ustaw stos dla tego hartu (używamy __hart_stacks_start z link.ld)
-    # Każdy hart dostaje 4KB (0x1000)
-    la      t0, __hart_stacks_start
-    li      t1, 0x1000
-    mul     t1, t1, s0              # offset = hartid * 4096
-    add     t0, t0, t1              # t0 = &__hart_stacks_start[hartid * 4096]
-    add     sp, t0, t1              # sp = t0 + 4096 (szczyt stosu)
-
-    # 2. Wywołaj inicjalizację drugoplanową
-    mv      a0, s0                  # przekaż hartid
-    call    secondary_hart_init
-
-    # 3. Jeśli z jakiegoś powodu wróci, zaparkuj
+    # Store real boot hartid in g_cotan.boot_hartid (offset 0x020)
+    la      t0, g_cotan
+    sd      s0, 0x020(t0)           # COTAN_OFF_BOOT_HARTID
+    
+    mv      a0, s0                  # real boot hartid for kernel_main
+    call    kernel_main
 .Lpark:
     wfi
+    j       .Lpark
+
+.Lsecondary_wait:
+    # Spin on a .data flag using registers only. Do NOT touch BSS here:
+    # the primary hart is still clearing it.
+    la      t0, g_init_done
+.Lwait_loop:
+    lw      t1, 0(t0)
+    beqz    t1, .Lwait_loop
+    fence   r, rw
+
+    # Per-hart stack: __hart_stacks_start + (hartid + 1) * 4096
+    la      t0, __hart_stacks_start
+    li      t1, 0x1000
+    addi    t2, s0, 1
+    mul     t2, t1, t2
+    add     sp, t0, t2
+
+    mv      a0, s0
+    call    secondary_hart_init
     j       .Lpark

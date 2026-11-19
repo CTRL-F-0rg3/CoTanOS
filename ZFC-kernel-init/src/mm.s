@@ -74,34 +74,90 @@ mm_init:
 # --- void mm_map_megapage(u64 va, u64 pa, u64 flags) ---
 # va and pa must be 2 MiB aligned.
 # Assumes root[VPN2(va)] already points to L1.
-.globl mm_map_megapage
-mm_map_megapage:
-    srli    t0, a0, 21
-    andi    t0, t0, 0x1FF          # VPN1
-    slli    t0, t0, 3              # offset in L1
-    
-    srli    t1, a0, 30
-    andi    t1, t1, 0x1FF          # VPN2
-    slli    t1, t1, 3
-    
-    la      t2, g_root_pt
-    add     t2, t2, t1
-    ld      t3, 0(t2)              # root[VPN2]
-    
+# Disabled: replaced by C implementation in mm_walk.c
+mm_map_megapage_asm_old:
+    addi    sp, sp, -64
+    sd      ra, 0(sp)
+    sd      s0, 8(sp)
+    sd      s1, 16(sp)
+    sd      s2, 24(sp)
+    sd      s3, 32(sp)
+    sd      s4, 40(sp)
+
+    mv      s0, a0                  # va
+    mv      s1, a1                  # pa
+    mv      s2, a2                  # flags
+    la      s3, g_root_pt           # current table
+    li      s4, 2                   # start at level 2
+
+.Lwalk:
+    # idx = (va >> (12 + 9*level)) & 0x1FF
+    li      t0, 9
+    mul     t0, t0, s4
+    addi    t0, t0, 12
+    srl     t1, s0, t0
+    andi    t1, t1, 0x1FF
+    slli    t2, t1, 3
+    add     t2, s3, t2              # &table[idx]
+    ld      t3, 0(t2)
+    andi    t4, t3, 1
+    bnez    t4, .Lhave_child
+
+    # Slot empty: allocate a child table from the PMM.
+    sd      t2, 48(sp)              # save slot across the C call
+    call    pmm_alloc_page
+    ld      t2, 48(sp)
+    beqz    a0, .Lmap_fail
+    mv      t5, a0
+
+    mv      t6, t5
+    li      t0, 512
+.Lzero:
+    sd      zero, 0(t6)
+    addi    t6, t6, 8
+    addi    t0, t0, -1
+    bnez    t0, .Lzero
+
+    srli    t0, t5, 12
+    slli    t0, t0, 10
+    ori     t0, t0, 1               # V only, no U on intermediate entries
+    sd      t0, 0(t2)
+    mv      t3, t0                  # Update t3 so .Lhave_child uses the new PTE
+
+.Lhave_child:
     srli    t3, t3, 10
-    slli    t3, t3, 12             # L1 address
-    add     t3, t3, t0             # &L1[VPN1]
-    
-    srli    t4, a1, 12
-    slli    t4, t4, 10
-    or      t4, t4, a2             # PTE
-    sd      t4, 0(t3)
-    
+    slli    t3, t3, 12
+    mv      s3, t3
+    addi    s4, s4, -1
+    bgtz    s4, .Lwalk
+
+    # Leaf at level 1: idx = (va >> 21) & 0x1FF
+    srli    t0, s0, 21
+    andi    t0, t0, 0x1FF
+    slli    t0, t0, 3
+    add     t0, s3, t0
+    srli    t1, s1, 12
+    slli    t1, t1, 10
+    or      t1, t1, s2
+    ori     t1, t1, 1               # V
+    ori     t1, t1, 0xC0            # A|D pre-set, avoids access faults
+    sd      t1, 0(t0)
+    li      a0, 0
+    j       .Lmap_ret
+
+.Lmap_fail:
+    li      a0, -1
+.Lmap_ret:
+    ld      ra, 0(sp)
+    ld      s0, 8(sp)
+    ld      s1, 16(sp)
+    ld      s2, 24(sp)
+    ld      s3, 32(sp)
+    ld      s4, 40(sp)
+    addi    sp, sp, 64
     ret
 
-# --- void mm_map_kernel(void) ---
-# Maps entire DRAM 0x80000000–0x88000000 with megapages RWX.
-# Covers kernel (0x80200000 + _kernel_end), BSS, kernel stacks.
+
 .globl mm_map_kernel
 mm_map_kernel:
     addi    sp, sp, -48
@@ -126,6 +182,24 @@ mm_map_kernel:
     j       .Lmm_kmap_loop
 
 .Lmm_kmap_done:
+    # Map MMIO devices (CLINT, PLIC, UART) as RW (no X, no U)
+    # CLINT: 0x2000000 (64KB) -> map 2MB megapage at 0x2000000
+    li      a0, 0x2000000
+    li      a1, 0x2000000
+    li      a2, PTE_R | PTE_W | PTE_V
+    call    mm_map_megapage
+    
+    # PLIC: 0x0c000000 (4MB) -> map 2MB megapage at 0x0c000000
+    li      a0, 0x0c000000
+    li      a1, 0x0c000000
+    li      a2, PTE_R | PTE_W | PTE_V
+    call    mm_map_megapage
+    
+    # UART0: 0x10000000 (64KB) -> map 2MB megapage at 0x10000000
+    li      a0, 0x10000000
+    li      a1, 0x10000000
+    li      a2, PTE_R | PTE_W | PTE_V
+    call    mm_map_megapage
     ld      ra, 0(sp)
     ld      s0, 8(sp)
     ld      s1, 16(sp)
@@ -133,18 +207,19 @@ mm_map_kernel:
     ld      s3, 32(sp)
     addi    sp, sp, 48
     ret
-# --- void mm_enable_paging(void) ---
+
+
+
+
 .globl mm_enable_paging
 mm_enable_paging:
     la      t0, g_root_pt
     srli    t0, t0, 12
-    li      t1, SATP_MODE_SV39
+    li      t1, 8
+    slli    t1, t1, 60
     or      t0, t0, t1
-    
-    sfence.vma zero, zero
     csrw    satp, t0
     sfence.vma zero, zero
-    
     ret
 
 # --- void mm_disable_paging(void) --- (debug)
@@ -155,3 +230,4 @@ mm_disable_paging:
     sfence.vma zero, zero
     
     ret
+

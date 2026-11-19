@@ -1,3 +1,4 @@
+extern void start_user_process(void);
 #include "CoTan_trap.h"
 #include "CoTan_uart.h"
 #include "CoTan_global.h"
@@ -38,6 +39,7 @@ static void wake_hart(int hartid) {
 }
 
 void secondary_hart_init(u64 hart_id) {
+    trap_init(hart_id);
     uart_puts("[kernel] secondary hart ");
     uart_hex(hart_id);
     uart_puts(" awake, joining scheduler\n");
@@ -45,8 +47,15 @@ void secondary_hart_init(u64 hart_id) {
     // W xv6 sched_start obsługuje wiele hartów, jeśli są poprawnie zainicjalizowane.
     // Na razie po prostu wpadamy w pętlę schedulera.
     /* Obudź pozostałe harty (SMP) */
+        extern volatile int g_init_done;
+    g_init_done = 1;
+    __sync_synchronize();
+
     uart_puts("[kernel] waking up secondary harts...\n");
     wake_hart(1); // Budzimy hart 1
+    
+    uart_puts("[kernel] starting user process...\n");
+    start_user_process();
     
     uart_puts("[kernel] entering scheduler on hart 0\n");
     sched_start();
@@ -65,7 +74,7 @@ void task_b(void) {
 }
 
 void kernel_main(u64 hart_id) {
-    trap_init();
+    trap_init(hart_id);
     uart_puts("[kernel] entered kernel_main, hart="); uart_hex(hart_id); uart_putc(0x0a);
   struct cotan_global *G = cotan_global();
     uart_puts("[kernel] G="); uart_hex((u64)G); uart_putc(10);
@@ -86,6 +95,8 @@ void kernel_main(u64 hart_id) {
 
   uart_puts("[kernel] pmm_init\n");
     pmm_init(heap_start, heap_end - heap_start);
+    uart_puts("[kernel] heap_start="); uart_hex((u64)heap_start);
+    uart_puts(" heap_end="); uart_hex((u64)heap_end); uart_putc(10);
   pmm_mark_used(DRAM_BASE, heap_start - DRAM_BASE);
 
   G->heap_start = heap_start;
@@ -121,6 +132,9 @@ void kernel_main(u64 hart_id) {
     /* Obudź pozostałe harty (SMP) */
     uart_puts("[kernel] waking up secondary harts...\n");
     wake_hart(1); // Budzimy hart 1
+    
+    uart_puts("[kernel] starting user process...\n");
+    start_user_process();
     
     uart_puts("[kernel] entering scheduler on hart 0\n");
     sched_start();
