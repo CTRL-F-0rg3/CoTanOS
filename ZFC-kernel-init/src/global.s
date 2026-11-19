@@ -80,7 +80,7 @@ cotan_panic_halt:
 
     # Skopiuj wiadomość (max COTAN_PANIC_MSG_LEN = 64, ze znakiem NUL)
     beqz    a1, .Lpanic_no_msg
-    la      t0, COTAN_OFF_PANIC_MSG(tp)
+    addi    t0, tp, COTAN_OFF_PANIC_MSG
     mv      t1, a1
     li      t2, 63
 .Lpanic_copy:

@@ -1,5 +1,5 @@
 # boot.s – uruchamiany w trybie M
-.section .text.boot
+.section .text.init
 .globl _start
 
 _start:

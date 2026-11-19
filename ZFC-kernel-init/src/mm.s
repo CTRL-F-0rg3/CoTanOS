@@ -1,10 +1,9 @@
 # =============================================================================
-# src/mm.s – tablice stron Sv39, identyczne mapowanie jądra
+# src/mm.s – Sv39 page tables, identity mapping for kernel
 # =============================================================================
-
 .section .text.mm, "ax", @progbits
 
-# --- bity PTE ---
+# --- PTE bits ---
 .equ PTE_V,           0x001
 .equ PTE_R,           0x002
 .equ PTE_W,           0x004
@@ -13,14 +12,12 @@
 .equ PTE_G,           0x020
 .equ PTE_A,           0x040
 .equ PTE_D,           0x080
-
 .equ PTE_LEAF_RW_V,   (PTE_R | PTE_W | PTE_V | PTE_A | PTE_D)
 .equ PTE_LEAF_RWX_V,  (PTE_R | PTE_W | PTE_X | PTE_V | PTE_A | PTE_D)
 .equ PTE_NONLEAF,     (PTE_V)
-
 .equ SATP_MODE_SV39,  0x8000000000000000
 
-# --- stałe mapy ---
+# --- Map constants ---
 .equ MMIO_VPN2,       0                   # 0x00000000–0x40000000 (CLINT/PLIC/UART)
 .equ DRAM_VPN2,       2                   # 0x80000000–0xC0000000 (DRAM)
 .equ DRAM_BASE,       0x80000000
@@ -28,26 +25,19 @@
 .equ MEGAPAGE_SIZE,   0x200000
 
 # =============================================================================
-# Statyczne tablice stron – dwie strony 4 KiB w .bss
+# Static page tables – two 4 KiB pages in .bss
 # =============================================================================
 .section .bss
 .balign 4096
 .globl g_root_pt
 g_root_pt:
-    .space 4096
+.space 4096
 
 .balign 4096
 .globl g_l1_dram
 g_l1_dram:
-    .space 4096
+.space 4096
 
-.globl g_root_pt
-.balign 4096
-g_root_pt: .space 4096
-
-.globl g_l1_dram
-.balign 4096
-g_l1_dram: .space 4096
 # =============================================================================
 .section .text.mm, "ax", @progbits
 
@@ -58,8 +48,8 @@ g_l1_dram: .space 4096
 mm_init:
     la      t0, g_root_pt
     la      t1, g_l1_dram
-
-    # Wyzeruj obie tablice (2 × 512 × 8 B)
+    
+    # Zero both tables (2 × 512 × 8 B)
     li      t2, 0
     li      t3, 1024
     mv      t4, t0
@@ -68,72 +58,81 @@ mm_init:
     addi    t4, t4, 8
     addi    t3, t3, -1
     bnez    t3, .Lmm_zero
-
-    # root[MMIO_VPN2] = gigapage identity map 0x00000000, RW (bez X – MMIO)
+    
+    # root[MMIO_VPN2] = gigapage identity map 0x00000000, RW (no X – MMIO)
     li      t3, PTE_LEAF_RW_V
     sd      t3, (MMIO_VPN2 * 8)(t0)
-
-    # root[DRAM_VPN2] = nie-lisc -> g_l1_dram
+    
+    # root[DRAM_VPN2] = non-leaf -> g_l1_dram
     srli    t3, t1, 12
     slli    t3, t3, 10
     ori     t3, t3, PTE_V
     sd      t3, (DRAM_VPN2 * 8)(t0)
-
+    
     ret
 
 # --- void mm_map_megapage(u64 va, u64 pa, u64 flags) ---
-# va i pa muszą być wyrównane do 2 MiB.
-# Zakłada że root[VPN2(va)] już wskazuje na L1.
+# va and pa must be 2 MiB aligned.
+# Assumes root[VPN2(va)] already points to L1.
 .globl mm_map_megapage
 mm_map_megapage:
     srli    t0, a0, 21
     andi    t0, t0, 0x1FF          # VPN1
-    slli    t0, t0, 3              # offset w L1
-
+    slli    t0, t0, 3              # offset in L1
+    
     srli    t1, a0, 30
     andi    t1, t1, 0x1FF          # VPN2
     slli    t1, t1, 3
+    
     la      t2, g_root_pt
     add     t2, t2, t1
     ld      t3, 0(t2)              # root[VPN2]
-
+    
     srli    t3, t3, 10
-    slli    t3, t3, 12             # adres L1
+    slli    t3, t3, 12             # L1 address
     add     t3, t3, t0             # &L1[VPN1]
-
+    
     srli    t4, a1, 12
     slli    t4, t4, 10
     or      t4, t4, a2             # PTE
     sd      t4, 0(t3)
+    
     ret
 
 # --- void mm_map_kernel(void) ---
-# Mapuje cały DRAM 0x80000000–0x88000000 megapage’ami RWX.
-# Pokrywa kernel (0x80200000 + _kernel_end), BSS, stosy jądra.
+# Maps entire DRAM 0x80000000–0x88000000 with megapages RWX.
+# Covers kernel (0x80200000 + _kernel_end), BSS, kernel stacks.
 .globl mm_map_kernel
 mm_map_kernel:
-    addi    sp, sp, -16
-    sd      s0, 0(sp)
-    sd      s1, 8(sp)
+    addi    sp, sp, -48
+    sd      ra, 0(sp)
+    sd      s0, 8(sp)
+    sd      s1, 16(sp)
+    sd      s2, 24(sp)
+    sd      s3, 32(sp)
 
-    li      t0, DRAM_BASE
-    li      t1, DRAM_BASE + DRAM_SIZE
-    li      s0, MEGAPAGE_SIZE
-    li      s1, PTE_LEAF_RWX_V | PTE_G
+    li      s0, DRAM_BASE
+    li      s1, DRAM_BASE + DRAM_SIZE
+    li      s2, MEGAPAGE_SIZE
+    li      s3, PTE_LEAF_RWX_V | PTE_G
+
 .Lmm_kmap_loop:
-    bgeu    t0, t1, .Lmm_kmap_done
-    mv      a0, t0
-    mv      a1, t0
-    mv      a2, s1
+    bgeu    s0, s1, .Lmm_kmap_done
+    mv      a0, s0
+    mv      a1, s0
+    mv      a2, s3
     call    mm_map_megapage
-    add     t0, t0, s0
+    add     s0, s0, s2
     j       .Lmm_kmap_loop
-.Lmm_kmap_done:
-    ld      s0, 0(sp)
-    ld      s1, 8(sp)
-    addi    sp, sp, 16
-    ret
 
+.Lmm_kmap_done:
+    ld      ra, 0(sp)
+    ld      s0, 8(sp)
+    ld      s1, 16(sp)
+    ld      s2, 24(sp)
+    ld      s3, 32(sp)
+    addi    sp, sp, 48
+    ret
 # --- void mm_enable_paging(void) ---
 .globl mm_enable_paging
 mm_enable_paging:
@@ -141,9 +140,11 @@ mm_enable_paging:
     srli    t0, t0, 12
     li      t1, SATP_MODE_SV39
     or      t0, t0, t1
+    
     sfence.vma zero, zero
     csrw    satp, t0
     sfence.vma zero, zero
+    
     ret
 
 # --- void mm_disable_paging(void) --- (debug)
@@ -152,4 +153,5 @@ mm_disable_paging:
     sfence.vma zero, zero
     csrw    satp, zero
     sfence.vma zero, zero
+    
     ret

@@ -1,11 +1,11 @@
-/* src/link.ld – linker script dla etapu jądra (init.s + sched.s + reszta) */
+/* src/link.ld – linker script for kernel stage (init.s + sched.s + rest) */
 
 OUTPUT_ARCH(riscv)
 ENTRY(_start_kernel)
 
-/* Adres bazowy jądra w pamięci fizycznej.
-   MUSI być zgodny z adresem, pod który boot.s robi mret (rejestr mepc). */
-KERNEL_BASE = 0x80200000;
+/* Base kernel address in physical memory.
+   MUST match the address where boot.s does mret (mepc register). */
+KERNEL_BASE = 0x80600000;
 
 SECTIONS
 {
@@ -14,9 +14,9 @@ SECTIONS
     _kernel_start = .;
 
     /* ------------------------------------------------------------------
-     * 1. Kod wejściowy jądra – init.s MUSI być pierwszy,
-     *    żeby _start_kernel trafił pod znany, ustalony adres.
-     *    (KEEP zapobiega usunięciu sekcji przez --gc-sections)
+     * 1. Entry code – init.s MUST be first,
+     *    so _start_kernel lands at a known, fixed address.
+     *    (KEEP prevents section removal by --gc-sections)
      * ------------------------------------------------------------------ */
     .text.init : {
         KEEP(*(.text.init))
@@ -24,10 +24,10 @@ SECTIONS
     }
 
     /* ------------------------------------------------------------------
-     * 2. Reszta kodu – w tym sched.s (wczesny scheduler),
-     *    handlery trapów, kod C jądra itd.
-     *    Jeśli chcesz wyróżnić sched.s osobną sekcją, w sched.s użyj
-     *    .section .text.sched,"ax",@progbits i dodaj ją tutaj.
+     * 2. Rest of the code – including sched.s (early scheduler),
+     *    trap handlers, kernel C code, etc.
+     *    If you want to isolate sched.s in a separate section, use
+     *    .section .text.sched,"ax",@progbits in sched.s and add it here.
      * ------------------------------------------------------------------ */
     .text.sched : {
         *(.text.sched)
@@ -38,7 +38,7 @@ SECTIONS
     }
 
     /* ------------------------------------------------------------------
-     * 3. Dane tylko do odczytu (tablice opisów zadań, nazwy itd.)
+     * 3. Read-only data (task descriptors, names, etc.)
      * ------------------------------------------------------------------ */
     .rodata : {
         *(.rodata .rodata.*)
@@ -46,8 +46,8 @@ SECTIONS
     }
 
     /* ------------------------------------------------------------------
-     * 4. Dane zainicjowane (np. domyślne wartości w strukturach task/queue,
-     *    jeśli nie są zerowe – trafią tu z .data)
+     * 4. Initialized data (e.g., default values in task/queue structures,
+     *    if non-zero – will land here from .data)
      * ------------------------------------------------------------------ */
     .data : {
         *(.data .data.*)
@@ -55,11 +55,11 @@ SECTIONS
     }
 
     /* ------------------------------------------------------------------
-     * 5. BSS – tu wylądują struktury zdefiniowane w task.h / queue.h / sched.h:
-     *    - tablica tasków (np. struct task tasks[MAX_TASKS])
-     *    - kolejka runqueue (struct runqueue rq)
-     *    - zmienne globalne schedulera
-     *    init.s wyzeruje ten obszar PRZED skokiem do kodu C.
+     * 5. BSS – structures from task.h / queue.h / sched.h will land here:
+     *    - task array (e.g., struct task tasks[MAX_TASKS])
+     *    - runqueue (struct runqueue rq)
+     *    - scheduler global variables
+     *    init.s will zero this area BEFORE jumping to C code.
      * ------------------------------------------------------------------ */
     .bss (NOLOAD) : {
         . = ALIGN(16);
@@ -72,42 +72,42 @@ SECTIONS
     }
 
     /* ------------------------------------------------------------------
-     * 6. Stos jądra – init.s ustawia na jego szczyt sp przed call do C.
-     *    Dla wczesnego, jednordzeniowego schedulera wystarczy jeden stos,
-     *    ale alokujemy też "parkingowe" stosy dla pozostałych hartów,
-     *    żeby w przyszłości móc je uśpić na wfi.
+     * 6. Kernel stack – init.s sets sp to its top before calling C.
+     *    For early single-core scheduler, one stack is enough,
+     *    but we also allocate "parking" stacks for other harts,
+     *    so we can wake them up on wfi in the future.
      * ------------------------------------------------------------------ */
     .kernel_stack (NOLOAD) : {
         . = ALIGN(16);
         _kernel_stack = .;
-        . += 0x4000;                /* 16 KiB – dostosuj do potrzeb */
+        . += 0x4000;                /* 16 KiB – adjust as needed */
         _kernel_stack_top = .;
     }
 
     .hart_stacks (NOLOAD) : {
         . = ALIGN(16);
         __hart_stacks_start = .;
-        . += 0x1000 * 8;            /* 4 KiB × 8 hartów (zapas) */
+        . += 0x1000 * 8;            /* 4 KiB × 8 harts (reserve) */
         __hart_stacks_end = .;
     }
 
     /* ------------------------------------------------------------------
-     * 7. Opcjonalny, wydzielony obszar na dane wczesnego schedulera.
-     *    Przydatne, gdy chcesz mieć je w jednym, znanym miejscu
-     *    (np. do debugowania albo pod przyszłe SMP).
-     *    Jeśli nie używasz – możesz usunąć tę sekcję.
+     * 7. Optional, isolated area for early scheduler data.
+     *    Useful when you want them in one known place
+     *    (e.g., for debugging or future SMP).
+     *    If not used – you can remove this section.
      * ------------------------------------------------------------------ */
     .sched_data (NOLOAD) : {
         . = ALIGN(16);
         __sched_data_start = .;
-        . += 0x2000;                /* miejsce na task table / run queue */
+        . += 0x2000;                /* space for task table / run queue */
         __sched_data_end = .;
     }
 
     _kernel_end = .;
 
     /* ------------------------------------------------------------------
-     * 8. Śmieci – nie ładuj ich do pamięci
+     * 8. Junk – don't load them into memory
      * ------------------------------------------------------------------ */
     /DISCARD/ : {
         *(.comment)
