@@ -1,0 +1,18 @@
+[binaries]
+c = 'riscv64-linux-gnu-gcc'
+cpp = 'riscv64-linux-gnu-g++'
+ar = 'riscv64-linux-gnu-ar'
+strip = 'riscv64-linux-gnu-strip'
+pkgconfig = 'pkg-config'
+
+[properties]
+c_args = ['-march=rv64imafd', '-mabi=lp64d']
+cpp_args = ['-march=rv64imafd', '-mabi=lp64d']
+c_link_args = ['-march=rv64imafd', '-mabi=lp64d']
+cpp_link_args = ['-march=rv64imafd', '-mabi=lp64d']
+
+[host_machine]
+system = 'linux'
+cpu_family = 'riscv64'
+cpu = 'riscv64'
+endian = 'little'

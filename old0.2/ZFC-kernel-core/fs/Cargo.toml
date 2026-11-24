@@ -1,0 +1,10 @@
+[package]
+name = "cotan-fs"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+cotan-kapi = { path = "../kapi" }
+cotan-storage = { path = "../drivers/storage" }
+spin.workspace = true
+log.workspace = true
+bitflags.workspace = true

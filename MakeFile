@@ -1,0 +1,27 @@
+.PHONY: run-bios run-uefi run-riscv clean disk
+
+# Domyślne uruchomienie (np. x86_64 BIOS)
+run: run-bios
+
+run-bios:
+	@chmod +x run_x86_bios.sh
+	@./run_x86_bios.sh
+
+run-uefi:
+	@chmod +x run_x86_uefi.sh
+	@./run_x86_uefi.sh
+
+run-riscv:
+	@chmod +x run_riscv.sh
+	@./run_riscv.sh
+
+# Tworzenie czystego obrazu dysku 10GB
+disk:
+	@qemu-img create -f raw disk.img 10G
+	@echo "Utworzono obraz dysku disk.img (10GB)"
+
+# Czyszczenie plików tymczasowych
+clean:
+	@rm -f build/OVMF_VARS_COPY.fd
+	@rm -f disk.img
+	@echo "Wyczyszczono pliki tymczasowe."

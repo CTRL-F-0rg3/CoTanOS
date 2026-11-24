@@ -1,0 +1,8 @@
+[build]
+target = "riscv64imafdc-unknown-none-elf"
+
+[target.riscv64imafdc-unknown-none-elf]
+rustflags = [
+    "-C", "link-arg=-march=rv64imafdc",
+    "-C", "link-arg=-mabi=lp64d",
+]

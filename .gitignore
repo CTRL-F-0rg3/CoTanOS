@@ -1,14 +1,15 @@
-target/
-/target
+# Ogromne obrazy dysków QEMU (NIGDY nie commituj ich do gita)
+*.img
 
-# RISC-V boot chain artifacts (ini/ = bootloader, ini/sbi)
+# Artefakty budowania i tymczasowe pliki kompilatora
+build/
 *.o
-ini/sbi/fw.elf
-ini/sbi/fw.bin
-ini/boot.elf
-ini/boot.bin
+*.elf
+*.bin
+*.map
+OVMF_VARS_COPY*.fd
 
-# Userspace artifacts (new/usp/) — the initrd is embedded in the kernel
-new/arc/rv6/initrd.cpio
-new/usp/rootfs/bin/
-disk.img
+# Pliki tymczasowe edytorów
+*.swp
+*.swo
+*~
