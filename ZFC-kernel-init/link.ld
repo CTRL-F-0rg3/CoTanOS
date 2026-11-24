@@ -1,37 +1,26 @@
-/* 
- * CoTanOS Linker Script (RISC-V 64-bit)
- * Target: OpenSBI / QEMU (S-mode @ 0x80200000)
+/*
+ * CoTanOS linker script - S-mode @ 0x80600000 (OpenSBI fw_dynamic).
+ * _kernel_end MUST be after all stacks: kernel_main derives the PMM
+ * heap base from it, and a heap overlapping the stacks corrupts frames.
+ * CoTanOS GPLv3
  */
-
 OUTPUT_ARCH("riscv")
-ENTRY(_start)
+ENTRY(_start_kernel)
 
 SECTIONS
 {
-    /* Początek pamięci dla S-mode w OpenSBI */
-    . = 0x80200000;
+    . = 0x80600000;
+    _kernel_start = .;
 
-    /* Sekcja rozruchowa i kod wykonywalny */
     .text : {
         KEEP(*(.text.init))
         *(.text .text.*)
     }
 
-    /* Dane tylko do odczytu */
-    .rodata : {
-        . = ALIGN(8);
-        *(.rodata .rodata.*)
-    }
+    .rodata : ALIGN(8) { *(.rodata .rodata.*) }
+    .data   : ALIGN(8) { *(.data .data.*) }
 
-    /* Zainicjalizowane dane globalne */
-    .data : {
-        . = ALIGN(8);
-        *(.data .data.*)
-    }
-
-    /* Niezainicjalizowane dane (.bss) - wymagają wyczyszczenia przy starcie */
-    .bss : {
-        . = ALIGN(8);
+    .bss : ALIGN(8) {
         __bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
@@ -39,13 +28,26 @@ SECTIONS
         __bss_end = .;
     }
 
-    /* Alokacja stosu kernela (np. 16 KB na początek) */
-    . = ALIGN(16);
-    . += 16 * 1024;
-    _stack_top = .;
+    /* Stosy: NOLOAD, nie zaśmiecają obrazu ładowanego przez OpenSBI */
+    .stack ALIGN(4096) (NOLOAD) : {
+        _kernel_stack_bottom = .;
+        . += 16 * 1024;
+        _kernel_stack_top = .;
+        _stack_top = .;                 /* alias dla starszego kodu */
+
+        . = ALIGN(4096);
+        __hart_stacks_start = .;
+        . += 8 * 4096;
+        __hart_stacks_end = .;
+    }
+
+    . = ALIGN(4096);
+    _kernel_end = .;                    /* <-- dopiero tutaj */
 
     /DISCARD/ : {
         *(.comment)
         *(.note .note.*)
+        *(.riscv.attributes)
+        *(.eh_frame*)
     }
 }

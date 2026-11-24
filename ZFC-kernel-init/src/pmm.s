@@ -90,6 +90,10 @@ pmm_init:
 # --- paddr_t pmm_alloc_page(void) ---
 .globl pmm_alloc_page
 pmm_alloc_page:
+    addi    sp, sp, -16
+    sd      s0, 0(sp)
+    sd      ra, 8(sp)
+    
     la      t0, g_pmm_bitmap
     li      t2, 0
     li      s0, PMM_BITMAP_WORDS
@@ -143,6 +147,9 @@ pmm_alloc_page:
     slli    t4, t5, PAGE_SHIFT
     add     a0, t3, t4
     
+    ld      s0, 0(sp)
+    ld      ra, 8(sp)
+    addi    sp, sp, 16
     ret
 
 .Lpmm_next_word:
@@ -151,6 +158,9 @@ pmm_alloc_page:
     
 .Lpmm_fail:
     li      a0, 0
+    ld      s0, 0(sp)
+    ld      ra, 8(sp)
+    addi    sp, sp, 16
     ret
 
 # --- void pmm_free_page(paddr_t pa) ---

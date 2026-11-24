@@ -23,3 +23,11 @@ void uart_hex(u64 v) {
     uart_puts("0x");
     for (int i = 60; i >= 0; i -= 4) uart_putc(d[(v >> i) & 0xF]);
 }
+
+char uart_getc(void) {
+    #define UART_RHR 0
+    #define UART_LSR 5
+    #define LSR_DR   0x01
+    while ((uart[UART_LSR] & LSR_DR) == 0) { }
+    return (char)uart[UART_RHR];
+}

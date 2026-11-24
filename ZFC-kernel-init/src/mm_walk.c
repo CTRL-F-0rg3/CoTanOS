@@ -70,3 +70,55 @@ int mm_map_megapage(u64 va, u64 pa, u64 flags) {
     table[idx] = PA_PTE(pa) | flags | PTE_V | PTE_A | PTE_D;
     return 0;
 }
+
+// Map an MMIO region into the kernel page table (e.g., PCIe ECAM)
+
+// Map an MMIO region into the kernel page table (e.g., PCIe ECAM)
+u64 mm_map_mmio_region(u64 phys, u64 size) {
+    extern u64 g_root_pt[];
+    extern paddr_t pmm_alloc_page(void);
+    
+    u64 vaddr = phys;
+    u64 page_size = 4096;
+    size = (size + page_size - 1) & ~(page_size - 1);
+    
+    // Explicit RISC-V Sv39 PTE flags to avoid macro conflicts
+    u64 FLAG_V = 0x001; // Valid
+    u64 FLAG_R = 0x002; // Read
+    u64 FLAG_W = 0x004; // Write
+    u64 FLAG_A = 0x040; // Accessed
+    u64 FLAG_D = 0x080; // Dirty
+    
+    for (u64 offset = 0; offset < size; offset += page_size) {
+        u64 pa = phys + offset;
+        u64 va = vaddr + offset;
+        u64 flags = FLAG_V | FLAG_R | FLAG_W | FLAG_A | FLAG_D;
+        
+        u64 *root = g_root_pt;
+        u64 *tbl = root;
+        
+        for (int level = 2; level > 0; level--) {
+            u64 idx = (va >> (12 + 9 * level)) & 0x1FF;
+            u64 pte = tbl[idx];
+            
+            if (!(pte & FLAG_V)) {
+                u64 child = pmm_alloc_page();
+                if (!child) {
+                    uart_puts("[mm] PANIC: out of memory for MMIO mapping\n");
+                    return 0;
+                }
+                volatile u64 *z = (volatile u64 *)child;
+                for (int i = 0; i < 512; i++) z[i] = 0;
+                tbl[idx] = ((child >> 12) << 10) | FLAG_V;
+                pte = tbl[idx];
+            }
+            tbl = (u64 *)(((pte >> 10) << 12));
+        }
+        
+        u64 idx = (va >> 12) & 0x1FF;
+        tbl[idx] = ((pa >> 12) << 10) | flags;
+    }
+    
+    asm volatile("sfence.vma" ::: "memory");
+    return vaddr;
+}

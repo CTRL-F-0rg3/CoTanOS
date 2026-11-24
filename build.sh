@@ -1,90 +1,83 @@
-#!/usr/bin/env bash
-# CoTanOS/build.sh – freestanding RV64 kernel, entered from OpenSBI in S-mode
-set -euo pipefail
-
-CROSS="${CROSS:-riscv64-elf-}"
-CC="${CROSS}gcc"
-LD="${CROSS}ld"
-OBJDUMP="${CROSS}objdump"
-OBJCOPY="${CROSS}objcopy"
+#!/bin/bash
+set -e
 
 KERNEL_DIR="ZFC-kernel-init"
-BUILD_DIR="${KERNEL_DIR}/build"
-TARGET="${BUILD_DIR}/CoTanOS.elf"
-LDSCRIPT="${KERNEL_DIR}/src/link.ld"
+BUILD_DIR="$KERNEL_DIR/build"
+USER_DIR="userspace"
+RUST_DIR="ZFC-kernel-core"
+BASE_DIR="ZFC-kernel-base"
 
-# zicsr    – CSR instructions (binutils >= 2.38)
-# zifencei – fence.i
-# medany   – kernel lives above 2 GiB (0x80xxxxxx), medlow cannot reach it
-# no-relax – keep boot code layout predictable
-CFLAGS="-march=rv64imac_zicsr_zifencei -mabi=lp64 -mcmodel=medany -mno-relax
-        -ffreestanding -fno-builtin -fno-common -nostdlib
-        -O2 -g -Wall -Wextra -I${KERNEL_DIR}/include -I${KERNEL_DIR}/src/scheduler"
+echo "[*] Cleaning build directory..."
+rm -rf $BUILD_DIR
+mkdir -p $BUILD_DIR
+mkdir -p $USER_DIR/build
 
-mkdir -p "$BUILD_DIR"
-rm -f "$BUILD_DIR"/*.o
+echo "[*] Building Rust Core (with in-kernel drivers)..."
+cd $RUST_DIR
+cargo build --release -Z build-std=core,compiler_builtins,alloc
+cd ..
 
-OBJS=()
-echo "[*] ASM..."
-for f in "$KERNEL_DIR"/src/*.s; do
-    case "$(basename "$f")" in
-        boot.s) echo "    skip boot.s (M-mode stub, OpenSBI does this)"; continue ;;
-    esac
-    o="$BUILD_DIR/$(basename "$f" .s)_asm.o"
-    $CC $CFLAGS -c "$f" -o "$o"
-    OBJS+=("$o")
+echo "[*] Building Base Display Library (RISC-V)..."
+cd $BASE_DIR
+make clean
+make all
+cd ..
+
+echo "[*] Building kernel (C/ASM)..."
+cd $KERNEL_DIR
+
+for f in src/*.c; do
+    echo "    CC $f"
+    riscv64-elf-gcc -c $f -o build/$(basename $f .c).o \
+        -march=rv64imafd -mabi=lp64d -mcmodel=medany -fno-builtin -nostdlib \
+        -I include -I src/scheduler -I ../$BASE_DIR/include -Wall -O0
 done
 
-echo "[*] C..."
-for f in "$KERNEL_DIR"/src/*.c; do
-    o="$BUILD_DIR/$(basename "$f" .c).o"
-    $CC $CFLAGS -c "$f" -o "$o"
-    OBJS+=("$o")
+find src/scheduler -name "*.c" | while read f; do
+    echo "    CC $f"
+    riscv64-elf-gcc -c "$f" -o "build/$(basename "$f" .c).o" \
+        -march=rv64imafd -mabi=lp64d -mcmodel=medany -fno-builtin -nostdlib \
+        -I include -I src/scheduler -Wall -O0
 done
 
-
-
-echo "[*] ASM (uppercase .S files with preprocessor)..."
-for f in "$KERNEL_DIR"/src/*.S; do
-    [ -f "$f" ] || continue
-    o="$BUILD_DIR/$(basename "$f" .S)_asm.o"
-    $CC $CFLAGS -I"$KERNEL_DIR"/include -I"$KERNEL_DIR"/src/scheduler -c "$f" -o "$o"
-    OBJS+=("$o")
+find src -name "*.s" | while read f; do
+    base=$(basename "$f")
+    if [ "$base" != "boot.s" ]; then
+        echo "    AS $f"
+        riscv64-elf-as "$f" -o "build/$(basename "$f" .s).o"
+    fi
 done
 
-echo "[*] ASM (scheduler donor)..."
-for f in "$KERNEL_DIR"/src/scheduler/*.S; do
-    [ -f "$f" ] || continue
-    o="$BUILD_DIR/sched_$(basename "$f" .S)_asm.o"
-    $CC $CFLAGS -I"$KERNEL_DIR"/src/scheduler -I"$KERNEL_DIR"/include -c "$f" -o "$o"
-    OBJS+=("$o")
+find src -name "*.S" | while read f; do
+    echo "    AS $f"
+    riscv64-elf-gcc -c "$f" -o "build/$(basename "$f" .S).o" \
+        -march=rv64imafd -mabi=lp64d -mcmodel=medany -fno-builtin -nostdlib \
+        -I include -I src/scheduler
 done
 
+cd ..
 
-echo "[*] C (scheduler donor)..."
-for f in "$KERNEL_DIR"/src/scheduler/*.c; do
-    [ -f "$f" ] || continue
-    o="$BUILD_DIR/sched_$(basename "$f" .c).o"
-    $CC $CFLAGS -I"$KERNEL_DIR"/src/scheduler -I"$KERNEL_DIR"/include -c "$f" -o "$o"
-    OBJS+=("$o")
+echo "[*] Building user programs..."
+for f in $USER_DIR/*.S; do
+    if [ -f "$f" ]; then
+        name=$(basename $f .S)
+        riscv64-elf-as $f -o $USER_DIR/build/${name}.o
+        riscv64-elf-ld $USER_DIR/build/${name}.o -o $USER_DIR/build/${name}.bin
+    fi
 done
 
+if [ -d "$USER_DIR/hello" ]; then
+    echo "[*] Building userspace C programs..."
+    make -C $USER_DIR || true
+fi
 
+echo "[*] Linking kernel (C + Rust + Base)..."
+cd $KERNEL_DIR
+riscv64-elf-gcc -march=rv64imafd -mabi=lp64d -nostdlib -T link.ld \
+    build/*.o \
+    ../$RUST_DIR/target/riscv64imafdc-unknown-none-elf/release/libcotan_core.a \
+    -L../$BASE_DIR -lcotanbase \
+    -o build/CoTanOS.elf
 
-echo "[*] Building user app..."
-# 1. Compile assembly to object file
-${CC} ${CFLAGS} -c apps/user_test.S -o ${BUILD_DIR}/user_test.o
-# 2. Extract raw binary
-${OBJCOPY} -O binary ${BUILD_DIR}/user_test.o ${BUILD_DIR}/user_test.bin
-# 3. Link binary as an ELF object to embed it in the kernel
-# This generates symbols: _binary_user_test_bin_start and _binary_user_test_bin_end
-${LD} -r -b binary -o ${BUILD_DIR}/user_test_embed.o ${BUILD_DIR}/user_test.bin
-OBJS+=("${BUILD_DIR}/user_test_embed.o")
-
-echo "[*] LD..."
-$CC $CFLAGS -nostdlib -Wl,-T,"$LDSCRIPT" -Wl,--build-id=none \
-    "${OBJS[@]}" -o "$TARGET"
-
-$OBJDUMP -d "$TARGET" > "$BUILD_DIR/CoTanOS.asm"
-echo "[+] $TARGET"
-$CROSS-size "$TARGET" 2>/dev/null || true
+cd ..
+echo "[+] Build complete: $BUILD_DIR/CoTanOS.elf"

@@ -11,3 +11,4 @@ ini/boot.bin
 # Userspace artifacts (new/usp/) — the initrd is embedded in the kernel
 new/arc/rv6/initrd.cpio
 new/usp/rootfs/bin/
+disk.img

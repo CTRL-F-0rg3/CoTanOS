@@ -1,141 +1,108 @@
-extern void start_user_process(void);
+/*
+ * CoTanOS Kernel Main Entry Point
+ */
+
+#include "CoTan_types.h"
+#include "CoTan_pmm.h"
+#include "CoTan_mm.h"
 #include "CoTan_trap.h"
 #include "CoTan_uart.h"
 #include "CoTan_global.h"
-#include "CoTan_mm.h"
-#include "CoTan_pmm.h"
-#include "CoTan_types.h"
 #include "sched.h"
 
+extern int core_init(u64 dtb_addr);
+
+// External symbols from linker script
 extern char _kernel_start[];
 extern char _kernel_end[];
 
-/* Symbole z mm.s / pmm.s – wystawiamy je w ich nagłówkach */
-extern u64 g_pmm_base; /* już w CoTan_pmm.h */
-extern u64 g_pmm_pages;
-extern u64 g_pmm_free;
-extern u64 g_root_pt;  /* from mm.s */
-
-
-/* --- SMP Support --- */
-static void wake_hart(int hartid) {
-    uart_puts("[kernel] sending SBI IPI to hart ");
-    // Prosty hack do wypisania cyfry (zakładamy hartid 1)
-    uart_putc('0' + hartid);
-    uart_puts("\n");
-    
-    register unsigned long a0 asm("a0") = (1UL << hartid); // hart_mask
-    register unsigned long a1 asm("a1") = 0UL;             // hart_mask_base (MUST be 0 for single hart)
-    register unsigned long a6 asm("a6") = 0x73444950UL;    // SBI_EXT_IPI
-    register unsigned long a7 asm("a7") = 0UL;             // SBI_FN_IPI
-    
-    asm volatile(
-        "ecall"
-        : "+r"(a0), "+r"(a1)
-        : "r"(a6), "r"(a7)
-        : "memory"
-    );
-    uart_puts("[kernel] SBI IPI sent\n");
-}
+// VGA display functions
+extern int qemu_vga_init(u32 width, u32 height);
+extern void qemu_vga_draw_test_pattern(void);
 
 void secondary_hart_init(u64 hart_id) {
-    trap_init(hart_id);
     uart_puts("[kernel] secondary hart ");
     uart_hex(hart_id);
-    uart_puts(" awake, joining scheduler\n");
-    
-    // W xv6 sched_start obsługuje wiele hartów, jeśli są poprawnie zainicjalizowane.
-    // Na razie po prostu wpadamy w pętlę schedulera.
-    /* Obudź pozostałe harty (SMP) */
-        extern volatile int g_init_done;
-    g_init_done = 1;
-    __sync_synchronize();
-
-    uart_puts("[kernel] waking up secondary harts...\n");
-    wake_hart(1); // Budzimy hart 1
-    
-    uart_puts("[kernel] starting user process...\n");
-    start_user_process();
-    
-    uart_puts("[kernel] entering scheduler on hart 0\n");
-    sched_start();
+    uart_puts(" awake, parking\n");
+    while (1) {
+        __asm__ volatile ("wfi");
+    }
 }
 
+void kernel_main(u64 hartid, u64 dtb) {
+    uart_puts("[kernel] entered kernel_main, hart=");
+    uart_hex(hartid);
+    uart_puts("\n");
 
-void task_a(void) {
-    uart_puts("[task_a] started\n");
-  for (;;)
-    sched_yield();
-}
-void task_b(void) {
-    uart_puts("[task_b] started\n");
-  for (;;)
-    sched_yield();
-}
+    uart_puts("[kernel] G=");
+    uart_hex((u64)&g_cotan);
+    uart_puts("\n");
 
-void kernel_main(u64 hart_id) {
-    trap_init(hart_id);
-    uart_puts("[kernel] entered kernel_main, hart="); uart_hex(hart_id); uart_putc(0x0a);
-  struct cotan_global *G = cotan_global();
-    uart_puts("[kernel] G="); uart_hex((u64)G); uart_putc(10);
+    uart_puts("[kernel] copying DTB to safe kernel memory...\n");
+    // FDT header: magic(4) totalsize(4) off_dt_struct(4) off_dt_strings(4) ...
+    // totalsize is at offset 0x04, BIG-ENDIAN
+    u32 *fdt_hdr = (u32 *)dtb;
+    u32 fdt_totalsize_be = fdt_hdr[1];
+    u32 fdt_totalsize = __builtin_bswap32(fdt_totalsize_be);
+    uart_puts("[kernel] DTB totalsize = ");
+    uart_hex(fdt_totalsize);
+    uart_puts(" bytes\n");
 
-  /* ----- Krok 1: statyczna mapa pamięci ----- */
-  G->dram_base = DRAM_BASE;
-  G->dram_size = DRAM_SIZE;
-  G->kernel_start = (u64)_kernel_start;
-  G->kernel_end = (u64)_kernel_end;
-  G->boot_ticks = 0;        /* rdcycle tu jeszcze nie mierzone */
-  G->timer_freq = 10000000; /* QEMU virt: 10 MHz timebase */
+    // Sanity check: FDT magic must be 0xd00dfeed (big-endian)
+    if (__builtin_bswap32(fdt_hdr[0]) != 0xd00dfeed) {
+        uart_puts("[kernel] FATAL: bad FDT magic!\n");
+        while(1) __asm__ volatile("wfi");
+    }
 
-  /* ----- Krok 2: PMM ----- */
-  G->phase = COTAN_PHASE_PMM;
+    // Allocate safe buffer: use a dedicated region far from g_cotan
+    // 64KB should be plenty for QEMU virt DTB (typically ~30KB)
+    u64 *safe_dtb = (u64 *)0x80800000;  // above kernel, below framebuffer
+    u64 *src = (u64 *)dtb;
+    u32 words = (fdt_totalsize + 7) / 8;
+    for (u32 i = 0; i < words; i++) {
+        safe_dtb[i] = src[i];
+    }
+    
+    uart_puts("[kernel] DTB safely copied to ");
+    uart_hex((u64)safe_dtb);
+    uart_puts("\n");
 
-  paddr_t heap_start = ((paddr_t)_kernel_end + PAGE_SIZE - 1) & PAGE_MASK;
-  paddr_t heap_end = DRAM_BASE + DRAM_SIZE;
-
-  uart_puts("[kernel] pmm_init\n");
-    pmm_init(heap_start, heap_end - heap_start);
-    uart_puts("[kernel] heap_start="); uart_hex((u64)heap_start);
-    uart_puts(" heap_end="); uart_hex((u64)heap_end); uart_putc(10);
-  pmm_mark_used(DRAM_BASE, heap_start - DRAM_BASE);
-
-  G->heap_start = heap_start;
-  G->heap_end = heap_end;
-  G->pmm_bitmap_ptr = 0; /* uzupełnij, gdy dodasz eksport */
-
-  /* ----- Krok 3: VM (Sv39, identity map) ----- */
-  G->phase = COTAN_PHASE_VM;
-
-  uart_puts("[kernel] mm_init\n");
+    // Initialize PMM with memory after kernel
+    paddr_t pmm_base = (paddr_t)_kernel_end;
+    u64 pmm_size = 128 * 1024 * 1024; // 128MB for QEMU
+    
+    uart_puts("[kernel] pmm_init\n");
+    pmm_init(pmm_base, pmm_size);
+    
+    uart_puts("[kernel] mm_init\n");
     mm_init();
-  uart_puts("[kernel] mm_map_kernel\n");
+    
+    uart_puts("[kernel] mm_map_kernel\n");
     mm_map_kernel();
-  uart_puts("[kernel] mm_enable_paging\n");
+    
+    uart_puts("[kernel] mm_enable_paging\n");
     mm_enable_paging();
     uart_puts("[kernel] paging ON\n");
 
-  G->root_pt_ptr = (u64)&g_root_pt; /* z mm.s – dodaj .globl */
+    uart_puts("[kernel] calling Rust core_init...\n");
+    int rust_result = core_init((u64)safe_dtb);
+    uart_puts("[kernel] Rust core returned: ");
+    uart_hex((u64)rust_result);
+    uart_puts("\n");
 
-  /* ----- Krok 4: Scheduler ----- */
-  G->phase = COTAN_PHASE_SCHED;
-  G->sched_ptr = (u64)&g_sched;
+    // Initialize Display Subsystem
+    uart_puts("[kernel] initializing display subsystem...\n");
+    if (qemu_vga_init(1024, 768) == 0) {
+        qemu_vga_draw_test_pattern();
+        uart_puts("[kernel] display test pattern rendered.\n");
+    } else {
+        uart_puts("[kernel] display initialization skipped/failed.\n");
+    }
 
-  sched_enqueue(sched_create(task_a));
-  sched_enqueue(sched_create(task_b));
-
-  /* ----- Krok 5: full speed ----- */
-  G->hart_data_ptr = (u64)g_hart_data;
-  G->phase = COTAN_PHASE_RUNNING;
-  G->boot_count++;
-
-  uart_puts("[kernel] sched_start\n");
-    /* Obudź pozostałe harty (SMP) */
-    uart_puts("[kernel] waking up secondary harts...\n");
-    wake_hart(1); // Budzimy hart 1
-    
-    uart_puts("[kernel] starting user process...\n");
-    start_user_process();
-    
-    uart_puts("[kernel] entering scheduler on hart 0\n");
+    uart_puts("[kernel] sched_start\n");
     sched_start();
+    
+    while (1) {
+        __asm__ volatile ("wfi");
+    }
 }

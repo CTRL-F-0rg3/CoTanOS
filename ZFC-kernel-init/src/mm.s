@@ -59,9 +59,8 @@ mm_init:
     addi    t3, t3, -1
     bnez    t3, .Lmm_zero
     
-    # root[MMIO_VPN2] = gigapage identity map 0x00000000, RW (no X – MMIO)
-    li      t3, PTE_LEAF_RW_V
-    sd      t3, (MMIO_VPN2 * 8)(t0)
+    # root[MMIO_VPN2] = left empty, will be mapped by mm_map_kernel as 2MB pages
+    # (CLINT, PLIC, UART need fine-grained mapping)
     
     # root[DRAM_VPN2] = non-leaf -> g_l1_dram
     srli    t3, t1, 12

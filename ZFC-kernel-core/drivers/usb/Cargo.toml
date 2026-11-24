@@ -1,0 +1,11 @@
+[package]
+name = "cotan-usb"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cotan-kapi = { path = "../../kapi" }
+spin.workspace = true
+log.workspace = true
+crab-usb = "0.12.1"
+dma-api = "0.10"

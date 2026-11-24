@@ -13,6 +13,7 @@ g_init_done:
 _start_kernel:
     csrw    sie, zero
     mv      s0, a0                  # s0 = hartid
+    mv      s1, a1                  # Save DTB pointer from a1
 
     # Elect exactly one primary hart. .data is loaded by the ELF loader,
     # so this flag is valid before BSS is cleared.
@@ -40,6 +41,7 @@ _start_kernel:
     sd      s0, 0x020(t0)           # COTAN_OFF_BOOT_HARTID
     
     mv      a0, s0                  # real boot hartid for kernel_main
+    mv      a1, s1                  # Pass DTB pointer in a1
     call    kernel_main
 .Lpark:
     wfi
