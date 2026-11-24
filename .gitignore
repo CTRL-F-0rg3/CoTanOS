@@ -1,7 +1,7 @@
-# Ogromne obrazy dysków QEMU (NIGDY nie commituj ich do gita)
+# Obrazy dysków QEMU
 *.img
 
-# Artefakty budowania i tymczasowe pliki kompilatora
+# Artefakty budowania
 build/
 *.o
 *.elf
@@ -9,7 +9,7 @@ build/
 *.map
 OVMF_VARS_COPY*.fd
 
-# Pliki tymczasowe edytorów
+# Pliki tymczasowe
 *.swp
 *.swo
 *~

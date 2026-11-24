@@ -4,3 +4,27 @@
 [submodule "ZFC"]
 	path = ZFC
 	url = git@github.com:CTRL-F-0rg3/ZFC.git
+[submodule "userspace"]
+	path = userspace
+	url = git@github.com:CTRL-F-0rg3/userspace.git
+[submodule "drivers"]
+	path = drivers
+	url = git@github.com:CTRL-F-0rg3/drivers.git
+[submodule "ct-std"]
+	path = ct-std
+	url = git@github.com:CTRL-F-0rg3/ct-std.git
+[submodule "ctlib"]
+	path = ctlib
+	url = git@github.com:CTRL-F-0rg3/ctlib.git
+[submodule "loomcom"]
+	path = loomcom
+	url = git@github.com:CTRL-F-0rg3/loomcom.git
+[submodule "lunacom"]
+	path = lunacom
+	url = git@github.com:CTRL-F-0rg3/lunacom.git
+[submodule "titanus"]
+	path = titanus
+	url = git@github.com:CTRL-F-0rg3/titanus.git
+[submodule "de"]
+	path = de
+	url = git@github.com:CTRL-F-0rg3/de.git
