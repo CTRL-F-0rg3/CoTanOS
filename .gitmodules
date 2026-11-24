@@ -1,15 +1,9 @@
-[submodule "third_party/xv6-riscv"]
-	path = third_party/xv6-riscv
-	url = https://github.com/mit-pdos/xv6-riscv.git
 [submodule "ZFC"]
 	path = ZFC
 	url = git@github.com:CTRL-F-0rg3/ZFC.git
 [submodule "userspace"]
 	path = userspace
 	url = git@github.com:CTRL-F-0rg3/userspace.git
-[submodule "drivers"]
-	path = drivers
-	url = git@github.com:CTRL-F-0rg3/drivers.git
 [submodule "ct-std"]
 	path = ct-std
 	url = git@github.com:CTRL-F-0rg3/ct-std.git
