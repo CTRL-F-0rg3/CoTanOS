@@ -1,28 +1,25 @@
 #!/bin/bash
 # CoTanOS x86_64 BIOS Boot (Instancja 1)
+set -euo pipefail
 
-KERNEL_IMG="build/cotanos-x86_64.bin"
 DISK_IMG="disk_x86_bios.img"
-MEM="1G" # Zmniejszono do 1G, aby uruchomić 3 maszyny naraz bez przeciążania RAM
+MEM="1G"
 CPUS="1"
 
 if [ ! -f "$DISK_IMG" ]; then
-  qemu-img create -f raw "$DISK_IMG" 5G
+  echo "[-] Brak $DISK_IMG — uruchom najpierw ./build.sh"; exit 1
 fi
 
 qemu-system-x86_64 \
   -name "CoTanOS-x86-BIOS" \
   -machine q35,accel=kvm \
-  -m "$MEM" \
-  -smp "$CPUS" \
-  -cpu host \
-  -kernel "$KERNEL_IMG" \
-  -drive file="$DISK_IMG",format=raw,if=virtio \
+  -m "$MEM" -smp "$CPUS" -cpu host \
+  -drive file="$DISK_IMG",format=raw,if=none,id=boot0 \
+  -device ide-hd,bus=ide.0,drive=boot0 \
   -device virtio-vga-gl \
   -device virtio-keyboard-pci \
   -device virtio-tablet-pci \
   -netdev user,id=net0,hostfwd=tcp::2222-:22 \
   -device virtio-net-pci,netdev=net0 \
   -display gtk,gl=on \
-  -no-reboot \
-  -no-shutdown &
+  -no-reboot -no-shutdown &

@@ -1,0 +1,37 @@
+NASM     := nasm
+CC       := gcc
+LD       := ld
+OBJCOPY  := objcopy
+
+all: bios.img bootx64.efi
+
+# ---- BIOS ----
+stage1.bin: boot_x86_64_bios.s
+	$(NASM) -DSTAGE1 -f bin $< -o $@
+
+stage2.bin: boot_x86_64_bios.s
+	$(NASM) -DSTAGE2 -f bin $< -o $@
+
+bios.img: stage1.bin stage2.bin
+	cat stage1.bin stage2.bin > $@
+	# ewentualnie: dd if=/dev/zero of=$@ bs=512 count=64
+
+# ---- UEFI (gnu-efi) ----
+LIBGNU := /usr/lib
+CRT    := $(LIBGNU)/crt0-efi-x86_64.o
+LDS    := /usr/lib/elf_x86_64_efi.lds
+
+boot.so: boot.c boot_uefi.S $(CRT)
+	$(CC) -fpic -ffreestanding -fno-stack-protector -mno-red-zone \
+	      -DGNU_EFI_USE_MS_ABI -c boot.c -o boot.o
+	$(CC) -c boot_uefi.S -o boot_uefi.o
+	$(LD) -nostdlib -znocombreloc -T $(LDS) -shared -Bsymbolic \
+	      $(CRT) boot.o boot_uefi.o -L$(LIBGNU) -lefi -lgnuefi -o $@
+
+bootx64.efi: boot.so
+	$(OBJCOPY) -j .text -j .sdata -j .data -j .dynamic \
+	           -j .dynsym -j .rel -j .rela -j .reloc \
+	           --target=efi-app-x86_64 $< $@
+
+clean:
+	rm -f *.bin *.o *.so *.efi bios.img
