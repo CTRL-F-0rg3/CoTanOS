@@ -68,6 +68,7 @@ boot_s.o: $(UEFI_S)
 	      -c $< -o $@
 
 $(UEFI_SO): boot_c.o boot_s.o $(CRT0)
+	@echo "Linking $(UEFI_SO)"
 	$(LD) -nostdlib -znocombreloc -T $(LDS) -shared -Bsymbolic \
 	      $(CRT0) boot_c.o boot_s.o \
 	      -L$(GNUEfi_PREFIX)/lib -lefi -lgnuefi -o $@

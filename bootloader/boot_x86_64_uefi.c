@@ -14,7 +14,7 @@ typedef struct {
     UINT32 _pad;
 } boot_info_t;
 
-extern void jump_to_kernel(UINT64 entry, UINT64 boot_info);
+extern void jump_to_kernel(UINT64 entry, UINT64 boot_info, UINT64 system_table);
 
 EFI_STATUS efi_main(EFI_HANDLE ih, EFI_SYSTEM_TABLE *st) {
     InitializeLib(ih, st);
@@ -72,7 +72,7 @@ EFI_STATUS efi_main(EFI_HANDLE ih, EFI_SYSTEM_TABLE *st) {
     s = uefi_call_wrapper(BS->ExitBootServices, 2, ih, mkey);
     if (EFI_ERROR(s)) { Print(L"ExitBootServices: %r\n", s); return s; }
 
-    jump_to_kernel(KERNEL_LOAD_ADDR, (UINT64)bi);
+    jump_to_kernel(KERNEL_LOAD_ADDR, (UINT64)bi, (UINT64)st);
 
     for (;;) { __asm__ __volatile__("hlt"); }
     return EFI_SUCCESS;

@@ -1,7 +1,7 @@
 #!/bin/bash
 # CoTanOS RISC-V 64 OpenSBI Boot (Instancja 3)
 
-KERNEL_IMG="build/cotanos-riscv64.bin"
+KERNEL_IMG="bootloader/build/boot_riscv.bin"
 OPENSBI_IMG="build/opensbi-riscv64.bin"
 DISK_IMG="disk_riscv.img"
 MEM="1G"
